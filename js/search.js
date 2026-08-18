@@ -1,6 +1,10 @@
 // ============================================
-// FINORA — Global Search (v2.0)
+// FINORA — Global Search (v2.0) — ENRICHED — FIXED
 // ============================================
+
+let searchFilter = 'all';
+let currentPage = 1;
+const SEARCH_ITEMS_PER_PAGE = 25;  // ✅ Renamed to avoid conflict
 
 async function loadSearch() {
     const container = document.getElementById('pageContainer');
@@ -8,7 +12,7 @@ async function loadSearch() {
     const html = `
         <div class="search-page">
             <div class="page-header">
-                <h2>🔍 Search</h2>
+                <h2><i class="fas fa-search"></i> Search</h2>
             </div>
 
             <div class="search-box card">
@@ -17,8 +21,8 @@ async function loadSearch() {
                     <input type="text" class="form-control" id="searchInput" placeholder="Search transactions, people, committees, loans, savings..." />
                     <button class="btn btn-primary" onclick="performSearch()">Search</button>
                 </div>
-                <div class="search-filters" style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;">
-                    <button class="btn btn-sm btn-secondary" data-type="all" onclick="setSearchFilter('all')">All</button>
+                <div class="search-filters">
+                    <button class="btn btn-sm btn-primary" data-type="all" onclick="setSearchFilter('all')">All</button>
                     <button class="btn btn-sm btn-secondary" data-type="transactions" onclick="setSearchFilter('transactions')">Transactions</button>
                     <button class="btn btn-sm btn-secondary" data-type="people" onclick="setSearchFilter('people')">People</button>
                     <button class="btn btn-sm btn-secondary" data-type="committees" onclick="setSearchFilter('committees')">Committees</button>
@@ -44,13 +48,15 @@ async function loadSearch() {
         .search-input-group { display: flex; gap: 12px; align-items: center; }
         .search-input-group i { font-size: 1.2rem; color: var(--text-muted); }
         .search-input-group .form-control { flex: 1; }
+        .search-filters { display: flex; gap: 6px; margin-top: 12px; flex-wrap: wrap; }
         .search-result-section { margin-bottom: 20px; }
-        .search-result-section h4 { font-size: 0.9rem; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; }
+        .search-result-section h4 { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.05em; }
         .search-result-item { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: var(--bg-card); border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 6px; cursor: pointer; transition: all var(--transition); }
         .search-result-item:hover { box-shadow: var(--shadow); transform: translateX(4px); }
         .search-result-item .result-desc { font-weight: 500; }
         .search-result-item .result-meta { font-size: 0.75rem; color: var(--text-muted); }
-        .search-result-item .result-tag { font-size: 0.65rem; padding: 2px 8px; border-radius: 10px; background: var(--primary-light); color: var(--primary); }
+        .search-result-item .result-tag { font-size: 0.6rem; padding: 2px 10px; border-radius: var(--radius-full); background: var(--bg-card-hover); color: var(--text-muted); }
+        .search-summary { padding: 8px 0 16px; font-size: 0.9rem; color: var(--text-secondary); }
     `;
     document.getElementById('page-style').textContent = style.textContent;
 
@@ -58,8 +64,6 @@ async function loadSearch() {
         if (e.key === 'Enter') performSearch();
     });
 }
-
-let searchFilter = 'all';
 
 function setSearchFilter(filter) {
     searchFilter = filter;
@@ -107,12 +111,21 @@ async function performGlobalSearch(query) {
         recurring: []
     };
 
-    // Search Transactions
-    const txns = await getLedgerEntries({ search: query });
-    results.transactions = txns.slice(0, 20).map(t => ({
+    // Search Transactions — enriched
+    const allTxns = await getLedgerEntries();
+    const matchingTxns = allTxns.filter(t => 
+        t.id.toLowerCase().includes(lowerQuery) ||
+        t.description.toLowerCase().includes(lowerQuery) ||
+        (t.notes && t.notes.toLowerCase().includes(lowerQuery)) ||
+        (t.tags && t.tags.some(tag => tag.toLowerCase().includes(lowerQuery))) ||
+        (t.amount && t.amount.toString().includes(query)) ||
+        (t.type && t.type.toLowerCase().includes(lowerQuery))
+    );
+    
+    results.transactions = matchingTxns.slice(0, 50).map(t => ({
         id: t.id,
         description: t.description || t.type,
-        meta: formatDate(t.date) + ' · ' + t.type,
+        meta: formatDate(t.date) + ' · ' + t.type + ' · ' + formatCurrency(t.amount),
         amount: t.amount,
         direction: t.direction,
         type: 'transaction',
@@ -121,7 +134,7 @@ async function performGlobalSearch(query) {
 
     // Search People
     const people = await db.readAll('people');
-    people.forEach(p => {
+    for (const p of people) {
         if (p.name.toLowerCase().includes(lowerQuery) ||
             (p.phone && p.phone.includes(query)) ||
             (p.email && p.email.toLowerCase().includes(lowerQuery))) {
@@ -133,11 +146,11 @@ async function performGlobalSearch(query) {
                 tag: 'Person'
             });
         }
-    });
+    }
 
     // Search Committees
     const committees = await db.readAll('committees');
-    committees.forEach(c => {
+    for (const c of committees) {
         if (c.name.toLowerCase().includes(lowerQuery)) {
             results.committees.push({
                 id: c.id,
@@ -147,11 +160,11 @@ async function performGlobalSearch(query) {
                 tag: 'Committee'
             });
         }
-    });
+    }
 
     // Search Loans
     const loans = await db.readAll('loans');
-    loans.forEach(l => {
+    for (const l of loans) {
         if (l.name.toLowerCase().includes(lowerQuery)) {
             results.loans.push({
                 id: l.id,
@@ -161,11 +174,11 @@ async function performGlobalSearch(query) {
                 tag: 'Loan'
             });
         }
-    });
+    }
 
     // Search Savings Goals
     const goals = await db.readAll('savings_goals');
-    goals.forEach(g => {
+    for (const g of goals) {
         if (g.name.toLowerCase().includes(lowerQuery)) {
             results.savings.push({
                 id: g.id,
@@ -175,11 +188,11 @@ async function performGlobalSearch(query) {
                 tag: 'Savings'
             });
         }
-    });
+    }
 
     // Search Recurring
     const recurring = await db.readAll('recurring_rules');
-    recurring.forEach(r => {
+    for (const r of recurring) {
         if (r.name.toLowerCase().includes(lowerQuery)) {
             results.recurring.push({
                 id: r.id,
@@ -189,7 +202,7 @@ async function performGlobalSearch(query) {
                 tag: 'Recurring'
             });
         }
-    });
+    }
 
     return results;
 }
@@ -259,3 +272,4 @@ function navigateToSearchResult(type, id) {
 
 window.loadSearch = loadSearch;
 window.performSearch = performSearch;
+window.setSearchFilter = setSearchFilter;
