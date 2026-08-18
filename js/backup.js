@@ -1,38 +1,100 @@
 // ============================================
-// FINORA — Backup & Restore (v2.0)
+// FINORA — Backup & Restore (v2.0) — FIXED
 // ============================================
 
-// Simple encryption/decryption (for demo purposes)
-// In production, use proper AES-256-GCM
+// ✅ AES-256-GCM encryption using Web Crypto API
 async function encryptData(data, password) {
     const encoder = new TextEncoder();
-    const dataBuffer = encoder.encode(JSON.stringify(data));
-
-    // Simple XOR-based encryption (for demo)
-    // In production, use Web Crypto API with AES-256-GCM
-    const passwordBuffer = encoder.encode(password);
-    const encrypted = new Uint8Array(dataBuffer.length);
-
-    for (let i = 0; i < dataBuffer.length; i++) {
-        encrypted[i] = dataBuffer[i] ^ passwordBuffer[i % passwordBuffer.length];
-    }
-
-    return btoa(String.fromCharCode(...encrypted));
+    
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    
+    const keyMaterial = await crypto.subtle.importKey(
+        'raw',
+        encoder.encode(password),
+        'PBKDF2',
+        false,
+        ['deriveKey']
+    );
+    
+    const key = await crypto.subtle.deriveKey(
+        {
+            name: 'PBKDF2',
+            salt: salt,
+            iterations: 100000,
+            hash: 'SHA-256'
+        },
+        keyMaterial,
+        {
+            name: 'AES-GCM',
+            length: 256
+        },
+        false,
+        ['encrypt']
+    );
+    
+    const plaintext = encoder.encode(JSON.stringify(data));
+    const ciphertext = await crypto.subtle.encrypt(
+        {
+            name: 'AES-GCM',
+            iv: iv
+        },
+        key,
+        plaintext
+    );
+    
+    const combined = new Uint8Array(16 + 12 + new Uint8Array(ciphertext).length);
+    combined.set(salt, 0);
+    combined.set(iv, 16);
+    combined.set(new Uint8Array(ciphertext), 28);
+    
+    return btoa(String.fromCharCode(...combined));
 }
 
 async function decryptData(encryptedData, password) {
     try {
-        const encrypted = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+        const combined = Uint8Array.from(atob(encryptedData), c => c.charCodeAt(0));
+        
+        const salt = combined.slice(0, 16);
+        const iv = combined.slice(16, 28);
+        const ciphertext = combined.slice(28);
+        
         const encoder = new TextEncoder();
-        const passwordBuffer = encoder.encode(password);
-        const decrypted = new Uint8Array(encrypted.length);
-
-        for (let i = 0; i < encrypted.length; i++) {
-            decrypted[i] = encrypted[i] ^ passwordBuffer[i % passwordBuffer.length];
-        }
-
-        const decoder = new TextDecoder();
-        return JSON.parse(decoder.decode(decrypted));
+        
+        const keyMaterial = await crypto.subtle.importKey(
+            'raw',
+            encoder.encode(password),
+            'PBKDF2',
+            false,
+            ['deriveKey']
+        );
+        
+        const key = await crypto.subtle.deriveKey(
+            {
+                name: 'PBKDF2',
+                salt: salt,
+                iterations: 100000,
+                hash: 'SHA-256'
+            },
+            keyMaterial,
+            {
+                name: 'AES-GCM',
+                length: 256
+            },
+            false,
+            ['decrypt']
+        );
+        
+        const decrypted = await crypto.subtle.decrypt(
+            {
+                name: 'AES-GCM',
+                iv: iv
+            },
+            key,
+            ciphertext
+        );
+        
+        return JSON.parse(new TextDecoder().decode(decrypted));
     } catch (error) {
         throw new Error('Incorrect password or corrupted backup');
     }
@@ -41,26 +103,32 @@ async function decryptData(encryptedData, password) {
 async function exportBackup() {
     try {
         const data = await exportDatabase();
-        const password = prompt('Set a password for encryption (optional):');
-
-        let content;
-        let filename;
-        let mimeType;
-
-        if (password && password.length > 0) {
-            const encrypted = await encryptData(data, password);
-            content = encrypted;
-            filename = `finora-backup-${new Date().toISOString().split('T')[0]}.finora`;
-            mimeType = 'application/octet-stream';
-            showToast('Encrypted backup exported!', 'success');
-        } else {
-            content = JSON.stringify(data, null, 2);
-            filename = `finora-backup-${new Date().toISOString().split('T')[0]}.json`;
-            mimeType = 'application/json';
-            showToast('Backup exported successfully!', 'success');
+        const password = prompt('Set a password for encryption:');
+        
+        if (!password || password.length < 4) {
+            showToast('Password must be at least 4 characters', 'error');
+            return;
         }
-
-        downloadFile(content, filename, mimeType);
+        
+        const passwordConfirm = prompt('Confirm password:');
+        if (password !== passwordConfirm) {
+            showToast('Passwords do not match', 'error');
+            return;
+        }
+        
+        const encrypted = await encryptData(data, password);
+        
+        const backupData = {
+            version: 2,
+            algorithm: 'AES-256-GCM',
+            kdf: 'PBKDF2',
+            timestamp: new Date().toISOString(),
+            data: encrypted
+        };
+        
+        const filename = `finora-backup-${new Date().toISOString().split('T')[0]}.finora`;
+        downloadFile(JSON.stringify(backupData, null, 2), filename, 'application/octet-stream');
+        showToast('Encrypted backup exported successfully!', 'success');
     } catch (error) {
         showToast('Failed to export: ' + error.message, 'error');
     }
@@ -73,78 +141,58 @@ async function importBackup() {
     input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
+        
         const reader = new FileReader();
         reader.onload = async (ev) => {
             try {
-                let data = ev.target.result;
                 let jsonData;
-
-                // Check if it's encrypted (.finora file)
+                let rawData = ev.target.result;
+                
                 if (file.name.endsWith('.finora')) {
-                    const password = prompt('Enter backup password:');
-                    if (!password) {
-                        showToast('Password required for encrypted backup', 'error');
+                    const backupObj = JSON.parse(rawData);
+                    
+                    if (backupObj.version !== 2) {
+                        showToast('This backup format is not supported', 'error');
                         return;
                     }
+                    
+                    const password = prompt('Enter backup password:');
+                    if (!password) {
+                        showToast('Password required', 'error');
+                        return;
+                    }
+                    
                     try {
-                        jsonData = await decryptData(data, password);
+                        jsonData = await decryptData(backupObj.data, password);
                     } catch (error) {
                         showToast('Incorrect password or corrupted backup', 'error');
                         return;
                     }
                 } else {
-                    jsonData = JSON.parse(data);
+                    jsonData = JSON.parse(rawData);
                 }
-
-                const choice = confirm(
-                    'Restore Mode:\n\n' +
-                    'OK = Replace (existing data will be overwritten)\n' +
-                    'Cancel = Merge (combine with existing data)\n\n' +
-                    '⚠️ Replace will DELETE all current data!'
-                );
-
-                if (choice) {
-                    await importDatabase(jsonData);
-                    showToast('Data restored successfully! (Replace)', 'success');
-                } else {
-                    // Merge mode
-                    const db = getDB();
-                    const conflicts = [];
-
-                    for (const [storeName, records] of Object.entries(jsonData)) {
-                        if (storeName === 'settings' || storeName === 'categories') continue;
-                        const existing = await db.readAll(storeName);
-                        const existingIds = new Set(existing.map(r => r.id));
-                        const newRecords = [];
-                        const conflictRecords = [];
-
-                        for (const record of records) {
-                            if (existingIds.has(record.id)) {
-                                conflictRecords.push(record);
-                            } else {
-                                newRecords.push(record);
-                            }
-                        }
-
-                        if (conflictRecords.length > 0) {
-                            conflicts.push({ store: storeName, count: conflictRecords.length });
-                        }
-
-                        if (newRecords.length > 0) {
-                            await db.bulkCreate(storeName, newRecords);
-                        }
-                    }
-
-                    if (conflicts.length > 0) {
-                        showToast(`Merge completed. ${conflicts.map(c => `${c.store}: ${c.count} conflicts skipped`).join(', ')}`, 'warning');
-                    } else {
-                        showToast('Data merged successfully!', 'success');
-                    }
-                }
-
-                // Reload current page
-                await loadSettings();
+                
+                openModal('Restore Backup', `
+                    <div class="restore-options">
+                        <p style="margin-bottom:16px;color:var(--text-secondary);">
+                            How should Finora restore this backup?
+                        </p>
+                        <button class="btn btn-primary btn-block" onclick="handleRestore('replace')" style="margin-bottom:8px;">
+                            <i class="fas fa-upload"></i> Replace Existing Data
+                            <small style="display:block;font-weight:400;font-size:0.8rem;">Existing financial data will be replaced.</small>
+                        </button>
+                        <button class="btn btn-secondary btn-block" onclick="handleRestore('merge')" style="margin-bottom:8px;">
+                            <i class="fas fa-code-branch"></i> Merge With Existing Data
+                            <small style="display:block;font-weight:400;font-size:0.8rem;">Existing records will be preserved. Duplicates skipped.</small>
+                        </button>
+                        <button class="btn btn-danger btn-block" onclick="closeModal()">
+                            Cancel
+                        </button>
+                    </div>
+                `);
+                
+                window._pendingRestore = { data: jsonData };
+                
             } catch (error) {
                 showToast('Failed to restore: ' + error.message, 'error');
             }
@@ -152,6 +200,57 @@ async function importBackup() {
         reader.readAsText(file);
     };
     input.click();
+}
+
+async function handleRestore(mode) {
+    const jsonData = window._pendingRestore.data;
+    if (!jsonData) {
+        showToast('No backup data found', 'error');
+        return;
+    }
+    
+    closeModal();
+    
+    if (mode === 'replace') {
+        confirmAction('⚠️ This will replace ALL existing data. This action cannot be undone.', async () => {
+            try {
+                await importDatabase(jsonData);
+                showToast('Data restored successfully! (Replace)', 'success');
+                await loadSettings();
+                await navigateTo('dashboard');
+            } catch (error) {
+                showToast('Failed to restore: ' + error.message, 'error');
+            }
+        });
+    } else if (mode === 'merge') {
+        try {
+            const db = getDB();
+            let mergedCount = 0;
+            let skippedCount = 0;
+            
+            for (const [storeName, records] of Object.entries(jsonData)) {
+                if (storeName === 'settings' || storeName === 'categories') continue;
+                
+                const existing = await db.readAll(storeName);
+                const existingIds = new Set(existing.map(r => r.id));
+                
+                const newRecords = records.filter(r => !existingIds.has(r.id));
+                const skipped = records.length - newRecords.length;
+                
+                if (newRecords.length > 0) {
+                    await db.bulkCreate(storeName, newRecords);
+                    mergedCount += newRecords.length;
+                }
+                skippedCount += skipped;
+            }
+            
+            showToast(`Merge completed! ${mergedCount} records imported, ${skippedCount} skipped (duplicates).`, 'success');
+            await loadSettings();
+            await navigateTo('dashboard');
+        } catch (error) {
+            showToast('Failed to merge: ' + error.message, 'error');
+        }
+    }
 }
 
 async function exportCSV(type) {
@@ -200,4 +299,5 @@ async function exportCSV(type) {
 
 window.exportBackup = exportBackup;
 window.importBackup = importBackup;
+window.handleRestore = handleRestore;
 window.exportCSV = exportCSV;
