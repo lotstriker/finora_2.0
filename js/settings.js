@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Settings (v2.0)
+// FINORA — Settings (v2.0) — COMPLETE
 // ============================================
 
 async function loadSettings() {
@@ -15,7 +15,7 @@ async function loadSettings() {
     const html = `
         <div class="settings-page">
             <div class="page-header">
-                <h2>Settings</h2>
+                <h2><i class="fas fa-cog"></i> Settings</h2>
             </div>
 
             <div class="settings-grid">
@@ -56,31 +56,33 @@ async function loadSettings() {
                         <button class="btn btn-secondary" onclick="importBackup()">
                             <i class="fas fa-upload"></i> Restore Backup
                         </button>
-                        <small class="text-muted">Encrypted JSON backup with password protection</small>
+                        <small class="text-muted">Encrypted backup with AES-256-GCM + PBKDF2</small>
                     </div>
                 </div>
 
                 <div class="card settings-card">
                     <h3><i class="fas fa-file-export"></i> Data Export (CSV)</h3>
                     <div class="settings-group">
-                        <button class="btn btn-sm btn-secondary" onclick="exportCSV('transactions')">
-                            <i class="fas fa-file-csv"></i> Transactions
-                        </button>
-                        <button class="btn btn-sm btn-secondary" onclick="exportCSV('income')">
-                            <i class="fas fa-file-csv"></i> Income
-                        </button>
-                        <button class="btn btn-sm btn-secondary" onclick="exportCSV('expenses')">
-                            <i class="fas fa-file-csv"></i> Expenses
-                        </button>
-                        <button class="btn btn-sm btn-secondary" onclick="exportCSV('committee')">
-                            <i class="fas fa-file-csv"></i> Committee History
-                        </button>
-                        <button class="btn btn-sm btn-secondary" onclick="exportCSV('loans')">
-                            <i class="fas fa-file-csv"></i> Loan History
-                        </button>
-                        <button class="btn btn-sm btn-secondary" onclick="exportCSV('savings')">
-                            <i class="fas fa-file-csv"></i> Savings History
-                        </button>
+                        <div class="settings-options">
+                            <button class="btn btn-sm btn-secondary" onclick="exportCSV('transactions')">
+                                <i class="fas fa-file-csv"></i> Transactions
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="exportCSV('income')">
+                                <i class="fas fa-file-csv"></i> Income
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="exportCSV('expenses')">
+                                <i class="fas fa-file-csv"></i> Expenses
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="exportCSV('committee')">
+                                <i class="fas fa-file-csv"></i> Committee History
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="exportCSV('loans')">
+                                <i class="fas fa-file-csv"></i> Loan History
+                            </button>
+                            <button class="btn btn-sm btn-secondary" onclick="exportCSV('savings')">
+                                <i class="fas fa-file-csv"></i> Savings History
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -102,7 +104,6 @@ async function loadSettings() {
                         <p><strong>FINORA</strong> v2.0</p>
                         <p class="text-muted" style="font-size:0.85rem;">Personal Financial Management</p>
                         <p class="text-muted" style="font-size:0.8rem;">One Ledger. One Source of Truth.</p>
-                        <p class="text-muted" style="font-size:0.75rem;">Built with ❤️</p>
                     </div>
                 </div>
             </div>
