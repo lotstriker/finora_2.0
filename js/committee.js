@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Committee (v2.0 — COMPLETE)
+// FINORA — Committee (v2.0 — COMPLETE FIXED)
 // ============================================
 
 // ----- CREATE COMMITTEE WITH MEMBERSHIPS -----
@@ -24,6 +24,7 @@ async function createCommittee(data) {
         startDate: data.startDate || new Date().toISOString(),
         completedCycles: 0,
         totalGain: 0,
+        totalBidCost: 0,
         status: 'active',
         nextCycle: data.startDate || new Date().toISOString(),
         createdAt: new Date().toISOString(),
@@ -69,15 +70,20 @@ async function generateCommitteeCycles(committeeId, duration, baseContribution, 
             cycleNo: i,
             month: cycleDate.toISOString(),
             status: 'pending',
+            
+            // Financial fields
+            baseContribution: baseContribution,
             winningBid: null,
-            discount: 0,
-            contribution: baseContribution,
-            payable: baseContribution, // Will be multiplied by memberships
-            userWon: false,
+            discountPerMembership: 0,
+            payablePerMembership: baseContribution,
+            totalPayable: baseContribution,
             payout: 0,
-            contributionSaving: 0,
-            bidCost: 0,
-            netGain: 0,
+            cycleSaving: 0,
+            cumulativeGain: 0,
+            cumulativeBidCost: 0,
+            netResult: 0,
+            
+            userWon: false,
             winnerName: null,
             transactionId: null,
             payoutTransactionId: null,
@@ -119,33 +125,35 @@ async function recordCommitteeMonth(committeeId, cycleId, data) {
     const { winningBid, userWon, winnerName, accountId, paymentDate } = data;
     const memberships = await getCommitteeMemberships(committeeId);
     const membershipCount = memberships.length;
+    const members = committee.members;
 
-    // --- CALCULATIONS (LOCKED) ---
-    const discount = calculateBidDiscount(winningBid, committee.members);
-    const actualContribution = calculateActualContribution(committee.baseContribution, winningBid, committee.members);
-    const payable = calculateTotalPayable(actualContribution, membershipCount);
-    const payout = calculatePayout(committee.totalAmount, winningBid);
-    const contributionSaving = calculateContributionSaving(committee.baseContribution, winningBid, committee.members) * membershipCount;
-    const bidCost = userWon ? winningBid : 0;
-    const netGain = calculateCycleNetGain(committee.totalGain || 0, contributionSaving, winningBid, userWon);
+    // --- CALCULATIONS ---
+    const discountPerMembership = winningBid > 0 ? winningBid / members : 0;
+    const payablePerMembership = committee.baseContribution - discountPerMembership;
+    const totalPayable = payablePerMembership * membershipCount;
+    const payout = winningBid > 0 ? committee.totalAmount - winningBid : 0;
+    const cycleSaving = discountPerMembership * membershipCount;
 
-    // --- VALIDATION: One win per month ---
+    // Get previous cumulative values
+    const allCycles = await getCommitteeCycles(committeeId);
+    const completedCycles = allCycles.filter(c => c.status === 'completed');
+    const previousGain = completedCycles.reduce((sum, c) => sum + (c.cycleSaving || 0), 0);
+    const previousBidCost = completedCycles.reduce((sum, c) => sum + (c.winningBid || 0), 0);
+
+    const cumulativeGain = previousGain + cycleSaving;
+    const cumulativeBidCost = previousBidCost + (userWon ? winningBid : 0);
+    const netResult = cumulativeGain - cumulativeBidCost;
+
+    // --- VALIDATION: One win per month per committee ---
     if (userWon) {
-        // Check if user already won this month in any committee
-        const allCycles = await db.readAll('committee_cycles');
-        const sameMonthWins = allCycles.filter(c => 
-            c.month === cycle.month && 
+        const existingWins = await db.getByIndex('committee_cycles', 'idx_month', cycle.month);
+        const userWinsThisMonth = existingWins.filter(c => 
             c.userWon === true && 
+            c.committeeId === committeeId &&
             c.id !== cycle.id
         );
-        if (sameMonthWins.length > 0) {
-            throw new Error('You already won in another committee this month. One win per month allowed.');
-        }
-
-        // Check if user reached max wins
-        const totalWins = allCycles.filter(c => c.userWon === true && c.committeeId === committeeId).length;
-        if (totalWins >= membershipCount) {
-            throw new Error('You have reached maximum wins for this committee.');
+        if (userWinsThisMonth.length > 0) {
+            throw new Error('One win per month per committee allowed.');
         }
     }
 
@@ -153,7 +161,7 @@ async function recordCommitteeMonth(committeeId, cycleId, data) {
     const txn = await createLedgerEntry({
         type: LEDGER_TYPES.COMMITTEE_PAYMENT,
         direction: LEDGER_DIRECTIONS.OUT,
-        amount: payable,
+        amount: totalPayable,
         accountId: accountId,
         date: paymentDate || cycle.month,
         description: `${committee.name} - Month ${cycle.cycleNo} Contribution`,
@@ -180,14 +188,15 @@ async function recordCommitteeMonth(committeeId, cycleId, data) {
 
     // --- UPDATE CYCLE ---
     cycle.winningBid = winningBid;
-    cycle.discount = discount;
-    cycle.contribution = actualContribution;
-    cycle.payable = payable;
-    cycle.userWon = userWon;
+    cycle.discountPerMembership = discountPerMembership;
+    cycle.payablePerMembership = payablePerMembership;
+    cycle.totalPayable = totalPayable;
     cycle.payout = payout;
-    cycle.contributionSaving = contributionSaving;
-    cycle.bidCost = bidCost;
-    cycle.netGain = netGain - (committee.totalGain || 0);
+    cycle.cycleSaving = cycleSaving;
+    cycle.cumulativeGain = cumulativeGain;
+    cycle.cumulativeBidCost = cumulativeBidCost;
+    cycle.netResult = netResult;
+    cycle.userWon = userWon;
     cycle.winnerName = winnerName || null;
     cycle.status = 'completed';
     cycle.transactionId = txn.id;
@@ -198,12 +207,11 @@ async function recordCommitteeMonth(committeeId, cycleId, data) {
     // --- UPDATE MEMBERSHIP (if won) ---
     if (userWon) {
         const membershipsList = await getCommitteeMemberships(committeeId);
-        // Find the first available membership that hasn't won
         for (const m of membershipsList) {
             if (!m.lastWinCycle) {
                 m.totalWins = (m.totalWins || 0) + 1;
                 m.lastWinCycle = cycle.cycleNo;
-                m.totalGain = (m.totalGain || 0) + cycle.netGain;
+                m.totalGain = (m.totalGain || 0) + cycleSaving;
                 await db.update('committee_memberships', m);
                 break;
             }
@@ -212,7 +220,8 @@ async function recordCommitteeMonth(committeeId, cycleId, data) {
 
     // --- UPDATE COMMITTEE ---
     committee.completedCycles = (committee.completedCycles || 0) + 1;
-    committee.totalGain = netGain;
+    committee.totalGain = cumulativeGain;
+    committee.totalBidCost = cumulativeBidCost;
     committee.updatedAt = new Date().toISOString();
 
     if (committee.completedCycles >= committee.duration) {
@@ -237,15 +246,20 @@ async function skipCommitteeMonth(committeeId, cycleId) {
     const memberships = await getCommitteeMemberships(committeeId);
     const membershipCount = memberships.length;
 
-    // --- SKIP LOGIC (LOCKED) ---
-    // Bid = 0, Discount = 0, Contribution = Normal (Base), Payout = 0, Gain = 0
-    const payable = committee.baseContribution * membershipCount;
+    // --- SKIP LOGIC: No bid, no discount, normal contribution ---
+    const totalPayable = committee.baseContribution * membershipCount;
+
+    // Get previous cumulative values (no change on skip)
+    const allCycles = await getCommitteeCycles(committeeId);
+    const completedCycles = allCycles.filter(c => c.status === 'completed');
+    const previousGain = completedCycles.reduce((sum, c) => sum + (c.cycleSaving || 0), 0);
+    const previousBidCost = completedCycles.reduce((sum, c) => sum + (c.winningBid || 0), 0);
 
     // --- LEDGER TRANSACTION (Normal contribution) ---
     const txn = await createLedgerEntry({
         type: LEDGER_TYPES.COMMITTEE_PAYMENT,
         direction: LEDGER_DIRECTIONS.OUT,
-        amount: payable,
+        amount: totalPayable,
         accountId: committee.accountId || 'default',
         date: cycle.month,
         description: `${committee.name} - Month ${cycle.cycleNo} (Skipped - No Bid)`,
@@ -256,14 +270,15 @@ async function skipCommitteeMonth(committeeId, cycleId) {
 
     // --- UPDATE CYCLE ---
     cycle.winningBid = 0;
-    cycle.discount = 0;
-    cycle.contribution = committee.baseContribution;
-    cycle.payable = payable;
-    cycle.userWon = false;
+    cycle.discountPerMembership = 0;
+    cycle.payablePerMembership = committee.baseContribution;
+    cycle.totalPayable = totalPayable;
     cycle.payout = 0;
-    cycle.contributionSaving = 0;
-    cycle.bidCost = 0;
-    cycle.netGain = 0;
+    cycle.cycleSaving = 0;
+    cycle.cumulativeGain = previousGain;
+    cycle.cumulativeBidCost = previousBidCost;
+    cycle.netResult = previousGain - previousBidCost;
+    cycle.userWon = false;
     cycle.status = 'skipped';
     cycle.transactionId = txn.id;
     cycle.updatedAt = new Date().toISOString();
@@ -294,9 +309,11 @@ async function getCommitteeStats(committeeId) {
         totalCycles: cycles.length,
         completed: completed.length,
         pending: pending.length,
-        totalPaid: completed.reduce((s, c) => s + (c.payable || 0), 0),
+        totalPaid: completed.reduce((s, c) => s + (c.totalPayable || 0), 0),
         totalReceived: completed.reduce((s, c) => s + (c.payout || 0), 0),
-        totalGain: completed.reduce((s, c) => s + (c.netGain || 0), 0),
+        totalSaving: completed.reduce((s, c) => s + (c.cycleSaving || 0), 0),
+        totalBidCost: completed.reduce((s, c) => s + (c.winningBid || 0), 0),
+        netResult: completed.reduce((s, c) => s + (c.netResult || 0), 0),
         progress: cycles.length > 0 ? (completed.length / cycles.length * 100) : 0
     };
 }
