@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Loans & EMI (v2.0)
+// FINORA — Loans & EMI (v2.0) — FIXED
 // ============================================
 
 const LOAN_TYPES = ['Personal Loan', 'Home Loan', 'Car Loan', 'Bike Loan', 'Education Loan', 'Other'];
@@ -171,7 +171,7 @@ async function handleAddLoan() {
                 id: `INST-${Date.now()}-${i}`,
                 loanId: loan.id,
                 installmentNo: i,
-                scheduledEMI: isFinal ? null : monthlyEMI,
+                scheduledEMI: monthlyEMI,
                 dueDate: dueDate.toISOString(),
                 status: 'pending',
                 transactionId: null,
@@ -213,13 +213,21 @@ async function openAddEMIModal(loanId) {
                 <div><span>Loan</span> <strong>${loan.name}</strong></div>
                 <div><span>Installment</span> <strong>#${nextInstallment.installmentNo} of ${loan.totalInstallments}</strong></div>
                 <div><span>Due Date</span> <strong>${formatDate(nextInstallment.dueDate)}</strong></div>
-                <div><span>Amount</span> <strong>${formatCurrency(emiAmount)}</strong></div>
-                ${isFinal ? `<div class="text-warning" style="font-size:0.85rem;">⚠️ This is the final EMI. Amount: ${formatCurrency(loan.remaining)}</div>` : ''}
+                <div><span>Scheduled EMI</span> <strong>${formatCurrency(loan.monthlyEMI)}</strong></div>
+                ${isFinal ? `
+                    <div class="text-warning" style="font-size:0.85rem;margin:8px 0;">
+                        ⚠️ This is the final EMI. Payable: ${formatCurrency(loan.remaining)}
+                    </div>
+                    <div><span>Final Payable</span> <strong>${formatCurrency(emiAmount)}</strong></div>
+                ` : `
+                    <div><span>Amount</span> <strong>${formatCurrency(emiAmount)}</strong></div>
+                `}
                 <div><span>Remaining Balance</span> <strong>${formatCurrency(loan.remaining)}</strong></div>
             </div>
             <div class="form-group">
                 <label>Payment Date</label>
                 <input type="date" class="form-control" id="emiPaymentDate" value="${new Date().toISOString().split('T')[0]}" />
+                <small class="text-muted">Actual payment date (can be different from due date)</small>
             </div>
             <div class="form-group">
                 <label>Account</label>
@@ -255,18 +263,19 @@ async function handlePayEMI(loanId, installmentId, emiAmount, isFinal) {
         }
 
         const txn = await createLedgerEntry({
-            type: 'loan_emi',
-            direction: 'out',
+            type: LEDGER_TYPES.LOAN_EMI,
+            direction: LEDGER_DIRECTIONS.OUT,
             amount: emiAmount,
             accountId: accountId,
             date: paymentDate,
             description: `EMI #${installment.installmentNo} - ${loan.name}`,
             module: 'loan',
             moduleRef: loanId,
-            status: balance < emiAmount ? 'insufficient_balance' : 'completed',
+            status: balance < emiAmount ? LEDGER_STATUS.INSUFFICIENT_BALANCE : LEDGER_STATUS.COMPLETED,
             balanceWarning: balance < emiAmount
         });
 
+        // ✅ Store both due date and payment date
         installment.status = 'paid';
         installment.paidDate = paymentDate;
         installment.paidAmount = emiAmount;
@@ -321,7 +330,8 @@ async function viewLoanDetails(loanId) {
                 ${installments.map(inst => `
                     <div class="installment-item ${inst.status}">
                         <span>#${inst.installmentNo}</span>
-                        <span>${formatDate(inst.dueDate)}</span>
+                        <span>Due: ${formatDate(inst.dueDate)}</span>
+                        ${inst.paidDate ? `<span>Paid: ${formatDate(inst.paidDate)}</span>` : ''}
                         <span>${formatCurrency(inst.paidAmount || inst.scheduledEMI || 0)}</span>
                         <span class="inst-status ${inst.status}">${inst.status}</span>
                         ${inst.transactionId ? `<span class="inst-txn" onclick="viewTransaction('${inst.transactionId}')">🔍</span>` : ''}
