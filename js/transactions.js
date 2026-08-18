@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Transactions (v2.0)
+// FINORA — Transactions (v2.0) — FIXED
 // ============================================
 
 async function loadTransactions() {
@@ -22,9 +22,7 @@ async function loadTransactions() {
         <div class="transactions-page">
             <div class="page-header">
                 <h2>All Transactions</h2>
-                <button class="btn btn-primary" onclick="openAddTransaction()">
-                    <i class="fas fa-plus"></i> Add
-                </button>
+                <!-- ✅ No Add button here -->
             </div>
 
             <div class="txn-summary">
@@ -34,41 +32,60 @@ async function loadTransactions() {
             </div>
 
             <div class="txn-list">
-                ${entries.length > 0 ? entries.map(txn => `
-                    <div class="txn-item" onclick="viewTransaction('${txn.id}')">
-                        <div class="txn-item-left">
-                            <div class="txn-icon ${txn.type}">
-                                <i class="fas ${getTxnIcon(txn.type)}"></i>
-                            </div>
-                            <div class="txn-details">
-                                <div class="txn-desc">${txn.description || txn.type}</div>
-                                <div class="txn-meta">
-                                    <span>${formatDate(txn.date)}</span>
-                                    <span>·</span>
-                                    <span>${accountMap[txn.accountId] || 'Unknown'}</span>
-                                    ${txn.categoryId ? `<span>·</span><span>${catMap[txn.categoryId] || ''}</span>` : ''}
-                                    ${txn.module ? `<span>·</span><span class="txn-module">${txn.module}</span>` : ''}
-                                    ${txn.status === 'insufficient_balance' ? `<span class="txn-warning">⚠️ Insufficient Balance</span>` : ''}
+                ${entries.length > 0 ? entries.map(txn => {
+                    // ✅ Handle transfer display correctly
+                    let displayAmount = txn.amount;
+                    let displaySign = '';
+                    let displayDesc = txn.description || txn.type;
+                    
+                    if (txn.type === 'transfer') {
+                        if (txn.accountId === txn.accountId) {
+                            displaySign = '-';
+                            displayDesc = `Transfer to ${accountMap[txn.toAccountId] || 'Unknown'}`;
+                        } else if (txn.toAccountId === txn.accountId) {
+                            displaySign = '+';
+                            displayDesc = `Transfer from ${accountMap[txn.accountId] || 'Unknown'}`;
+                        }
+                    } else {
+                        displaySign = txn.direction === 'in' ? '+' : '-';
+                    }
+                    
+                    return `
+                        <div class="txn-item" onclick="viewTransaction('${txn.id}')">
+                            <div class="txn-item-left">
+                                <div class="txn-icon ${txn.type}">
+                                    <i class="fas ${getTxnIcon(txn.type)}"></i>
+                                </div>
+                                <div class="txn-details">
+                                    <div class="txn-desc">${displayDesc}</div>
+                                    <div class="txn-meta">
+                                        <span>${formatDate(txn.date)}</span>
+                                        <span>·</span>
+                                        <span>${accountMap[txn.accountId] || 'Unknown'}</span>
+                                        ${txn.categoryId ? `<span>·</span><span>${catMap[txn.categoryId] || ''}</span>` : ''}
+                                        ${txn.module ? `<span>·</span><span class="txn-module">${txn.module}</span>` : ''}
+                                        ${txn.status === 'warning' ? `<span class="txn-warning">⚠️ Insufficient Balance</span>` : ''}
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <div class="txn-item-right">
-                            <span class="txn-amount ${txn.direction === 'in' ? 'text-success' : 'text-danger'}">
-                                ${txn.direction === 'in' ? '+' : '-'} ${formatCurrency(txn.amount)}
-                            </span>
-                            ${txn.toAccountId ? `
-                                <span class="txn-transfer-detail">
-                                    <i class="fas fa-arrow-right"></i>
-                                    ${accountMap[txn.toAccountId] || 'Unknown'}
+                            <div class="txn-item-right">
+                                <span class="txn-amount ${txn.direction === 'in' ? 'text-success' : 'text-danger'}">
+                                    ${displaySign} ${formatCurrency(displayAmount)}
                                 </span>
-                            ` : ''}
+                                ${txn.toAccountId && txn.type !== 'transfer' ? `
+                                    <span class="txn-transfer-detail">
+                                        <i class="fas fa-arrow-right"></i>
+                                        ${accountMap[txn.toAccountId] || 'Unknown'}
+                                    </span>
+                                ` : ''}
+                            </div>
                         </div>
-                    </div>
-                `).join('') : `
+                    `;
+                }).join('') : `
                     <div class="empty-state">
                         <i class="fas fa-inbox"></i>
                         <p>No transactions yet</p>
-                        <button class="btn btn-primary" onclick="openAddTransaction()">Add your first transaction</button>
+                        <p class="text-muted">Transactions are created when you add income, expenses, transfers, or other financial actions.</p>
                     </div>
                 `}
             </div>
