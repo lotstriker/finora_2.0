@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Savings Goals (v2.0)
+// FINORA — Savings Goals (v2.0) — FIXED
 // ============================================
 
 async function loadSavings() {
@@ -53,6 +53,9 @@ async function loadSavings() {
                                 <button class="btn btn-sm btn-primary" onclick="event.stopPropagation();openAddSavingsContribution('${g.id}')">
                                     <i class="fas fa-plus"></i> Add Money
                                 </button>
+                                <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();openWithdrawSavings('${g.id}')">
+                                    <i class="fas fa-arrow-down"></i> Withdraw
+                                </button>
                             </div>
                         </div>
                     `;
@@ -85,7 +88,7 @@ async function loadSavings() {
         .savings-amounts strong { font-size: 1.1rem; }
         .savings-progress { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
         .savings-date { font-size: 0.8rem; color: var(--text-muted); margin: 4px 0; }
-        .savings-actions { margin-top: 12px; display: flex; gap: 8px; }
+        .savings-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
     `;
     document.getElementById('page-style').textContent = style.textContent;
 }
@@ -216,16 +219,17 @@ async function handleAddSavingsContribution(goalId) {
             if (!confirm(`⚠️ Insufficient balance! Recorded balance: ${formatCurrency(balance)}. Continue anyway?`)) return;
         }
 
+        // ✅ Savings contribution is NOT expense — it's money out
         const txn = await createLedgerEntry({
-            type: 'savings_contribution',
-            direction: 'out',
+            type: LEDGER_TYPES.SAVINGS_CONTRIBUTION,
+            direction: LEDGER_DIRECTIONS.OUT,
             amount: amount,
             accountId: accountId,
             date: date,
             description: `Savings: ${note || 'Contribution'}`,
             module: 'savings',
             moduleRef: goalId,
-            status: balance < amount ? 'insufficient_balance' : 'completed',
+            status: balance < amount ? LEDGER_STATUS.INSUFFICIENT_BALANCE : LEDGER_STATUS.COMPLETED,
             balanceWarning: balance < amount
         });
 
@@ -238,6 +242,7 @@ async function handleAddSavingsContribution(goalId) {
             date: date,
             note: note || null,
             transactionId: txn.id,
+            type: 'contribution',
             createdAt: new Date().toISOString()
         });
 
@@ -257,6 +262,99 @@ async function handleAddSavingsContribution(goalId) {
         await loadSavings();
     } catch (error) {
         showToast('Failed to add savings: ' + error.message, 'error');
+    }
+}
+
+// ✅ NEW: Withdraw from savings
+async function openWithdrawSavings(goalId) {
+    const db = getDB();
+    const goal = await db.read('savings_goals', goalId);
+    if (!goal) { showToast('Goal not found', 'error'); return; }
+
+    const contributions = await getSavingsContributions(goalId);
+    const saved = contributions.reduce((s, c) => s + c.amount, 0);
+
+    if (saved <= 0) {
+        showToast('No money to withdraw', 'warning');
+        return;
+    }
+
+    const accounts = await db.readAll('accounts');
+
+    openModal(`Withdraw from ${goal.name}`, `
+        <form id="savingsWithdrawForm">
+            <div class="form-group">
+                <label>Amount</label>
+                <input type="number" class="form-control" id="savingsWithdrawAmount" placeholder="₹ 0" max="${saved}" required />
+                <small class="text-muted">Available: ${formatCurrency(saved)}</small>
+            </div>
+            <div class="form-group">
+                <label>To Account</label>
+                <select class="form-control" id="savingsWithdrawAccount">
+                    ${accounts.map(a => `<option value="${a.id}">${a.name} (${formatCurrency(a.balance || 0)})</option>`).join('')}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Date</label>
+                <input type="date" class="form-control" id="savingsWithdrawDate" value="${new Date().toISOString().split('T')[0]}" />
+            </div>
+            <div class="form-group">
+                <label>Note (Optional)</label>
+                <input type="text" class="form-control" id="savingsWithdrawNote" placeholder="Withdrawal reason" />
+            </div>
+            <button type="submit" class="btn btn-warning btn-block">Withdraw Money</button>
+        </form>
+    `);
+
+    document.getElementById('savingsWithdrawForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await handleWithdrawSavings(goalId);
+    });
+}
+
+async function handleWithdrawSavings(goalId) {
+    const amount = parseFloat(document.getElementById('savingsWithdrawAmount').value);
+    const accountId = document.getElementById('savingsWithdrawAccount').value;
+    const date = document.getElementById('savingsWithdrawDate').value;
+    const note = document.getElementById('savingsWithdrawNote').value.trim();
+
+    if (!amount || amount <= 0) {
+        showToast('Please enter a valid amount', 'error');
+        return;
+    }
+
+    try {
+        // ✅ Savings withdrawal = Money IN
+        const txn = await createLedgerEntry({
+            type: LEDGER_TYPES.SAVINGS_WITHDRAWAL,
+            direction: LEDGER_DIRECTIONS.IN,
+            amount: amount,
+            accountId: accountId,
+            date: date,
+            description: `Savings withdrawal: ${note || 'Withdrawal'}`,
+            module: 'savings',
+            moduleRef: goalId,
+            status: LEDGER_STATUS.COMPLETED
+        });
+
+        const db = getDB();
+        await db.create('savings_contributions', {
+            id: `SC-${Date.now()}`,
+            goalId: goalId,
+            amount: -amount,  // Negative for withdrawal
+            accountId: accountId,
+            date: date,
+            note: note || null,
+            transactionId: txn.id,
+            type: 'withdrawal',
+            createdAt: new Date().toISOString()
+        });
+
+        closeModal();
+        showToast('Money withdrawn from savings!', 'success');
+        await loadSavings();
+    } catch (error) {
+        showToast('Failed to withdraw: ' + error.message, 'error');
     }
 }
 
@@ -284,17 +382,24 @@ async function viewSavingsDetails(goalId) {
             <h4>Contributions</h4>
             <div class="contribution-list">
                 ${contributions.length > 0 ? contributions.map(c => `
-                    <div class="contribution-item">
+                    <div class="contribution-item ${c.type === 'withdrawal' ? 'withdrawal' : ''}">
                         <span>${formatDate(c.date)}</span>
                         <span>${c.note || '—'}</span>
-                        <span class="text-success">+${formatCurrency(c.amount)}</span>
+                        <span class="${c.type === 'withdrawal' ? 'text-danger' : 'text-success'}">
+                            ${c.type === 'withdrawal' ? '-' : '+'}${formatCurrency(Math.abs(c.amount))}
+                        </span>
                         ${c.transactionId ? `<span class="txn-link" onclick="viewTransaction('${c.transactionId}')">🔍</span>` : ''}
                     </div>
                 `).join('') : '<span class="text-muted">No contributions yet</span>'}
             </div>
-            <button class="btn btn-primary" onclick="closeModal();openAddSavingsContribution('${goalId}')">
-                <i class="fas fa-plus"></i> Add Money
-            </button>
+            <div class="savings-detail-actions">
+                <button class="btn btn-primary" onclick="closeModal();openAddSavingsContribution('${goalId}')">
+                    <i class="fas fa-plus"></i> Add Money
+                </button>
+                <button class="btn btn-warning" onclick="closeModal();openWithdrawSavings('${goalId}')">
+                    <i class="fas fa-arrow-down"></i> Withdraw
+                </button>
+            </div>
         </div>
     `);
 }
@@ -302,3 +407,4 @@ async function viewSavingsDetails(goalId) {
 window.loadSavings = loadSavings;
 window.getSavingsContributions = getSavingsContributions;
 window.getActiveSavingsGoals = getActiveSavingsGoals;
+window.openWithdrawSavings = openWithdrawSavings;
