@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Recurring Payments (v2.0)
+// FINORA — Recurring Payments (v2.0) — FIXED
 // ============================================
 
 async function loadRecurring() {
@@ -23,7 +23,7 @@ async function loadRecurring() {
     if (dueReminders.length > 0) {
         reminderHtml = `
             <div class="recurring-reminders">
-                <h4>🔔 Due Soon</h4>
+                <h4><i class="fas fa-bell"></i> Due Soon</h4>
                 ${dueReminders.map(r => `
                     <div class="reminder-item">
                         <span>${r.name} — ${formatCurrency(r.amount)}</span>
@@ -234,6 +234,7 @@ async function handleAddRecurringRule() {
     }
 }
 
+// ✅ Record payment — creates actual ledger transaction
 async function recordRecurringPayment(ruleId) {
     const db = getDB();
     const rule = await db.read('recurring_rules', ruleId);
@@ -282,9 +283,10 @@ async function handleRecordRecurringPayment(ruleId) {
             if (!confirm(`⚠️ Insufficient balance! Recorded balance: ${formatCurrency(balance)}. Continue anyway?`)) return;
         }
 
+        // ✅ Create actual ledger transaction
         const txn = await createLedgerEntry({
-            type: 'expense',
-            direction: 'out',
+            type: LEDGER_TYPES.EXPENSE,
+            direction: LEDGER_DIRECTIONS.OUT,
             amount: rule.amount,
             accountId: accountId,
             categoryId: rule.categoryId || 'cat-exp-subscriptions',
@@ -292,29 +294,32 @@ async function handleRecordRecurringPayment(ruleId) {
             description: `Recurring: ${rule.name}`,
             module: 'recurring',
             moduleRef: rule.id,
-            status: balance < rule.amount ? 'insufficient_balance' : 'completed',
+            status: balance < rule.amount ? LEDGER_STATUS.INSUFFICIENT_BALANCE : LEDGER_STATUS.COMPLETED,
             balanceWarning: balance < rule.amount
         });
 
-        // Calculate next due
+        // ✅ Calculate next due date
         let nextDue;
+        const d = new Date(paymentDate);
+        
         if (rule.type === 'fixed') {
-            const d = new Date(paymentDate);
             if (rule.frequency === 'monthly') d.setMonth(d.getMonth() + 1);
             else if (rule.frequency === 'weekly') d.setDate(d.getDate() + 7);
             else if (rule.frequency === 'quarterly') d.setMonth(d.getMonth() + 3);
             else if (rule.frequency === 'yearly') d.setFullYear(d.getFullYear() + 1);
+            
             if (rule.day) {
                 const maxDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
                 d.setDate(Math.min(rule.day, maxDay));
             }
             nextDue = d.toISOString();
         } else {
-            const d = new Date(paymentDate);
+            // Validity based
             d.setDate(d.getDate() + (rule.validityDays || 28));
             nextDue = d.toISOString();
         }
 
+        // ✅ Update rule
         rule.nextDue = nextDue;
         rule.lastPaid = paymentDate;
         rule.lastTransactionId = txn.id;
