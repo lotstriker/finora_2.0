@@ -1,9 +1,9 @@
 // ============================================
-// FINORA — Database Schema (v2.0)
+// FINORA — Database Schema (v2.0) — FIXED
 // ============================================
 
 const DB_NAME = 'FinoraDB';
-const DB_VERSION = 2;
+const DB_VERSION = 3;  // ✅ Updated from 2 to 3
 
 const STORES = [
     {
@@ -27,13 +27,17 @@ const STORES = [
         keyPath: 'id',
         indexes: [
             { name: 'idx_name', keyPath: 'name' },
-            { name: 'idx_type', keyPath: 'type' }
+            { name: 'idx_type', keyPath: 'type' },
+            { name: 'idx_status', keyPath: 'status' }  // ✅ ADDED
         ]
     },
     {
         name: 'people',
         keyPath: 'id',
-        indexes: [{ name: 'idx_name', keyPath: 'name' }]
+        indexes: [
+            { name: 'idx_name', keyPath: 'name' },
+            { name: 'idx_status', keyPath: 'status' }  // ✅ ADDED
+        ]
     },
     {
         name: 'loans',
@@ -145,28 +149,28 @@ async function initDefaultCategories() {
 
     const defaults = [
         // Expenses
-        { id: 'cat-exp-food', name: 'Food', type: 'expense' },
-        { id: 'cat-exp-groceries', name: 'Groceries', type: 'expense' },
-        { id: 'cat-exp-transport', name: 'Transport', type: 'expense' },
-        { id: 'cat-exp-shopping', name: 'Shopping', type: 'expense' },
-        { id: 'cat-exp-bills', name: 'Bills & Utilities', type: 'expense' },
-        { id: 'cat-exp-entertainment', name: 'Entertainment', type: 'expense' },
-        { id: 'cat-exp-health', name: 'Health', type: 'expense' },
-        { id: 'cat-exp-education', name: 'Education', type: 'expense' },
-        { id: 'cat-exp-travel', name: 'Travel', type: 'expense' },
-        { id: 'cat-exp-rent', name: 'Rent', type: 'expense' },
-        { id: 'cat-exp-subscriptions', name: 'Subscriptions', type: 'expense' },
-        { id: 'cat-exp-insurance', name: 'Insurance', type: 'expense' },
-        { id: 'cat-exp-other', name: 'Other', type: 'expense' },
+        { id: 'cat-exp-food', name: 'Food', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-groceries', name: 'Groceries', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-transport', name: 'Transport', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-shopping', name: 'Shopping', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-bills', name: 'Bills & Utilities', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-entertainment', name: 'Entertainment', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-health', name: 'Health', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-education', name: 'Education', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-travel', name: 'Travel', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-rent', name: 'Rent', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-subscriptions', name: 'Subscriptions', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-insurance', name: 'Insurance', type: 'expense', isSystem: true, status: 'active' },
+        { id: 'cat-exp-other', name: 'Other', type: 'expense', isSystem: true, status: 'active' },
         // Income
-        { id: 'cat-inc-salary', name: 'Salary', type: 'income' },
-        { id: 'cat-inc-freelance', name: 'Freelance', type: 'income' },
-        { id: 'cat-inc-business', name: 'Business', type: 'income' },
-        { id: 'cat-inc-investment', name: 'Investment', type: 'income' },
-        { id: 'cat-inc-rent', name: 'Rent Income', type: 'income' },
-        { id: 'cat-inc-gift', name: 'Gift', type: 'income' },
-        { id: 'cat-inc-refund', name: 'Refund', type: 'income' },
-        { id: 'cat-inc-other', name: 'Other', type: 'income' }
+        { id: 'cat-inc-salary', name: 'Salary', type: 'income', isSystem: true, status: 'active' },
+        { id: 'cat-inc-freelance', name: 'Freelance', type: 'income', isSystem: true, status: 'active' },
+        { id: 'cat-inc-business', name: 'Business', type: 'income', isSystem: true, status: 'active' },
+        { id: 'cat-inc-investment', name: 'Investment', type: 'income', isSystem: true, status: 'active' },
+        { id: 'cat-inc-rent', name: 'Rent Income', type: 'income', isSystem: true, status: 'active' },
+        { id: 'cat-inc-gift', name: 'Gift', type: 'income', isSystem: true, status: 'active' },
+        { id: 'cat-inc-refund', name: 'Refund', type: 'income', isSystem: true, status: 'active' },
+        { id: 'cat-inc-other', name: 'Other', type: 'income', isSystem: true, status: 'active' }
     ];
     await db.bulkCreate('categories', defaults);
 }
