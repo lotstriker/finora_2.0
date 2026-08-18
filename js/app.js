@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Main Application (v2.0)
+// FINORA — Main Application (v2.0) — FIXED
 // ============================================
 
 const App = { currentPage: 'dashboard', initialized: false };
@@ -180,6 +180,9 @@ async function navigateTo(page) {
                 <div style="text-align:center;padding:40px 20px;color:var(--danger);">
                     <h3>⚠️ Error loading page</h3>
                     <p style="color:var(--text-secondary);">${error.message}</p>
+                    <button class="btn btn-primary" onclick="navigateTo('${page}')" style="margin-top:16px;">
+                        <i class="fas fa-sync"></i> Retry
+                    </button>
                 </div>
             `;
         }
