@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Expenses (v2.0) — FIXED
+// FINORA — Expenses (v2.0) — COMPLETE
 // ============================================
 
 async function loadExpenses() {
@@ -11,7 +11,7 @@ async function loadExpenses() {
     let html = `
         <div class="expenses-page">
             <div class="page-header">
-                <h2>Expenses</h2>
+                <h2><i class="fas fa-arrow-up"></i> Expenses</h2>
                 <button class="btn btn-primary" onclick="openAddExpenseModal()">
                     <i class="fas fa-plus"></i> Add Expense
                 </button>
@@ -31,7 +31,7 @@ async function loadExpenses() {
             const accountName = await getAccountName(e.accountId);
             const categoryName = e.categoryId ? await getCategoryName(e.categoryId) : '';
             html += `
-                <div class="expense-item">
+                <div class="expense-item" onclick="viewTransaction('${e.id}')">
                     <div class="expense-item-left">
                         <div class="expense-icon"><i class="fas fa-arrow-up"></i></div>
                         <div class="expense-details">
@@ -70,10 +70,10 @@ async function loadExpenses() {
     style.textContent = `
         .summary-card { text-align: center; padding: 24px; margin-bottom: 24px; }
         .summary-card h1 { font-size: 2.5rem; font-weight: 700; }
-        .expense-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-card); border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 8px; transition: all var(--transition); }
-        .expense-item:hover { box-shadow: var(--shadow); }
+        .expense-item { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background: var(--bg-card); border-radius: var(--radius-sm); border: 1px solid var(--border); margin-bottom: 8px; cursor: pointer; transition: all var(--transition); }
+        .expense-item:hover { box-shadow: var(--shadow); transform: translateX(4px); }
         .expense-item-left { display: flex; align-items: center; gap: 14px; flex: 1; }
-        .expense-icon { width: 40px; height: 40px; border-radius: 50%; background: #fee2e2; display: flex; align-items: center; justify-content: center; color: #ef4444; flex-shrink: 0; }
+        .expense-icon { width: 40px; height: 40px; border-radius: 50%; background: var(--danger-bg); display: flex; align-items: center; justify-content: center; color: var(--danger); flex-shrink: 0; }
         .expense-details { flex: 1; }
         .expense-desc { font-weight: 500; }
         .expense-meta { font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 4px; flex-wrap: wrap; }
@@ -97,28 +97,52 @@ async function openAddExpenseModal() {
     openModal('Add Expense', `
         <form id="expenseForm">
             <div class="form-group">
-                <label>Amount</label>
+                <label>Amount *</label>
                 <input type="number" class="form-control" id="expAmount" placeholder="₹ 0" required />
             </div>
             <div class="form-group">
-                <label>Account</label>
+                <label>Account *</label>
                 <select class="form-control" id="expAccount">
                     ${accounts.map(a => `<option value="${a.id}">${a.name} (${formatCurrency(a.balance || 0)})</option>`).join('')}
                 </select>
             </div>
             <div class="form-group">
-                <label>Category</label>
+                <label>Category *</label>
                 <select class="form-control" id="expCategory">
                     ${expenseCats.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
                 </select>
             </div>
             <div class="form-group">
-                <label>Date</label>
+                <label>Payment Mode (Optional)</label>
+                <select class="form-control" id="expPaymentMode">
+                    <option value="">Select...</option>
+                    <option value="cash">Cash</option>
+                    <option value="upi">UPI</option>
+                    <option value="card">Card</option>
+                    <option value="netbanking">Net Banking</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Date *</label>
                 <input type="date" class="form-control" id="expDate" value="${new Date().toISOString().split('T')[0]}" />
             </div>
             <div class="form-group">
-                <label>Description</label>
+                <label>Description (Optional)</label>
                 <input type="text" class="form-control" id="expDescription" placeholder="What did you buy?" />
+            </div>
+            <div class="form-group">
+                <label>Notes (Optional)</label>
+                <textarea class="form-control" id="expNotes" rows="2" placeholder="Any additional notes"></textarea>
+            </div>
+            <div class="form-group">
+                <label>Person (Optional)</label>
+                <select class="form-control" id="expPerson">
+                    <option value="">None</option>
+                    ${(await db.readAll('people')).filter(p => p.status !== 'archived').map(p => 
+                        `<option value="${p.id}">${p.name}</option>`
+                    ).join('')}
+                </select>
             </div>
             <button type="submit" class="btn btn-primary btn-block">Add Expense</button>
         </form>
@@ -135,7 +159,10 @@ async function handleAddExpense() {
     const accountId = document.getElementById('expAccount').value;
     const categoryId = document.getElementById('expCategory').value;
     const date = document.getElementById('expDate').value;
-    const description = document.getElementById('expDescription').value;
+    const description = document.getElementById('expDescription').value.trim();
+    const notes = document.getElementById('expNotes').value.trim();
+    const personId = document.getElementById('expPerson').value;
+    const paymentMode = document.getElementById('expPaymentMode').value;
 
     if (!amount || amount <= 0) {
         showToast('Please enter a valid amount', 'error');
@@ -152,15 +179,21 @@ async function handleAddExpense() {
             balanceWarning = true;
         }
 
+        const fullDescription = description || 'Expense';
+        const notesWithMode = paymentMode ? `Mode: ${paymentMode}\n${notes}` : notes;
+
         await createLedgerEntry({
-            type: 'expense',
-            direction: 'out',
+            type: LEDGER_TYPES.EXPENSE,
+            direction: LEDGER_DIRECTIONS.OUT,
             amount: amount,
             accountId: accountId,
             categoryId: categoryId,
+            personId: personId || null,
             date: date,
-            description: description || 'Expense',
-            status: balanceWarning ? 'insufficient_balance' : 'completed',
+            description: fullDescription,
+            notes: notesWithMode,
+            module: 'expense',
+            status: balanceWarning ? LEDGER_STATUS.INSUFFICIENT_BALANCE : LEDGER_STATUS.COMPLETED,
             balanceWarning: balanceWarning
         });
 
@@ -172,6 +205,5 @@ async function handleAddExpense() {
     }
 }
 
-// Make functions globally accessible
 window.loadExpenses = loadExpenses;
 window.openAddExpenseModal = openAddExpenseModal;
