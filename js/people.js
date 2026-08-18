@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — People (v2.0)
+// FINORA — People (v2.0) — FIXED
 // ============================================
 
 async function loadPeople() {
@@ -21,7 +21,7 @@ async function loadPeople() {
                     <div class="person-card card" onclick="viewPersonDetails('${p.id}')">
                         <div class="person-avatar"><i class="fas fa-user"></i></div>
                         <div class="person-info">
-                            <h3>${p.name}</h3>
+                            <h3>${p.name} ${p.status === 'archived' ? '<span class="person-archived">Archived</span>' : ''}</h3>
                             ${p.phone ? `<span class="person-phone">${p.phone}</span>` : ''}
                             ${p.email ? `<span class="person-email">${p.email}</span>` : ''}
                         </div>
@@ -29,8 +29,8 @@ async function loadPeople() {
                             <button class="btn btn-sm btn-secondary" onclick="event.stopPropagation();viewPersonDetails('${p.id}')">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();deletePerson('${p.id}')">
-                                <i class="fas fa-trash"></i>
+                            <button class="btn btn-sm btn-danger" onclick="event.stopPropagation();archivePerson('${p.id}')">
+                                <i class="fas fa-archive"></i>
                             </button>
                         </div>
                     </div>
@@ -55,6 +55,7 @@ async function loadPeople() {
         .person-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: var(--primary); flex-shrink: 0; }
         .person-info { flex: 1; }
         .person-info h3 { font-size: 1rem; font-weight: 600; }
+        .person-archived { font-size: 0.65rem; background: var(--text-muted); color: white; padding: 1px 8px; border-radius: 10px; margin-left: 6px; }
         .person-phone, .person-email { font-size: 0.75rem; color: var(--text-muted); display: block; }
         .person-actions { display: flex; gap: 6px; }
     `;
@@ -109,6 +110,7 @@ async function handleAddPerson() {
             phone: phone || null,
             email: email || null,
             notes: notes || null,
+            status: 'active',
             createdAt: new Date().toISOString()
         });
 
@@ -117,6 +119,47 @@ async function handleAddPerson() {
         await loadPeople();
     } catch (error) {
         showToast('Failed to add person: ' + error.message, 'error');
+    }
+}
+
+// ✅ ARCHIVE instead of DELETE
+async function archivePerson(personId) {
+    const db = getDB();
+    const person = await db.read('people', personId);
+    if (!person) {
+        showToast('Person not found', 'error');
+        return;
+    }
+
+    if (person.status === 'archived') {
+        showToast('Person is already archived', 'info');
+        return;
+    }
+
+    const transactions = await getLedgerEntries({ personId });
+    
+    if (transactions.length > 0) {
+        confirmAction(`Archive "${person.name}"? This person has ${transactions.length} transactions. They will remain in the ledger.`, async () => {
+            try {
+                person.status = 'archived';
+                person.archivedAt = new Date().toISOString();
+                await db.update('people', person);
+                showToast('Person archived successfully', 'warning');
+                await loadPeople();
+            } catch (error) {
+                showToast('Failed to archive: ' + error.message, 'error');
+            }
+        });
+    } else {
+        confirmAction(`Delete "${person.name}"? This person has no transactions.`, async () => {
+            try {
+                await db.delete('people', personId);
+                showToast('Person deleted', 'warning');
+                await loadPeople();
+            } catch (error) {
+                showToast('Failed to delete: ' + error.message, 'error');
+            }
+        });
     }
 }
 
@@ -137,6 +180,7 @@ async function viewPersonDetails(personId) {
                 ${person.phone ? `<div><span>Phone</span> ${person.phone}</div>` : ''}
                 ${person.email ? `<div><span>Email</span> ${person.email}</div>` : ''}
                 ${person.notes ? `<div><span>Notes</span> ${person.notes}</div>` : ''}
+                <div><span>Status</span> ${person.status || 'active'}</div>
                 <div><span>Total Related</span> <strong>${formatCurrency(totalRelated)}</strong></div>
                 <div><span>Transactions</span> ${transactions.length}</div>
             </div>
@@ -144,7 +188,7 @@ async function viewPersonDetails(personId) {
             <h4>Related Transactions</h4>
             <div class="person-txns">
                 ${transactions.length > 0 ? transactions.slice(0, 10).map(t => `
-                    <div class="txn-item-small">
+                    <div class="txn-item-small" onclick="viewTransaction('${t.id}')">
                         <span>${t.description || t.type}</span>
                         <span class="${t.direction === 'in' ? 'text-success' : 'text-danger'}">
                             ${t.direction === 'in' ? '+' : '-'} ${formatCurrency(t.amount)}
@@ -156,18 +200,6 @@ async function viewPersonDetails(personId) {
     `);
 }
 
-async function deletePerson(personId) {
-    confirmAction('Delete this person? Existing transactions will remain but person reference will be removed.', async () => {
-        try {
-            const db = getDB();
-            await db.delete('people', personId);
-            showToast('Person deleted', 'warning');
-            await loadPeople();
-        } catch (error) {
-            showToast('Failed to delete: ' + error.message, 'error');
-        }
-    });
-}
-
 window.loadPeople = loadPeople;
 window.openAddPersonModal = openAddPersonModal;
+window.archivePerson = archivePerson;
