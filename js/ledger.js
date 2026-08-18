@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Central Ledger (v2.0)
+// FINORA — Central Ledger (v2.0) — FIXED
 // ============================================
 
 const LEDGER_TYPES = {
@@ -11,7 +11,9 @@ const LEDGER_TYPES = {
     LOAN_EMI: 'loan_emi',
     SAVINGS_CONTRIBUTION: 'savings_contribution',
     SAVINGS_WITHDRAWAL: 'savings_withdrawal',
-    OPENING_BALANCE: 'opening_balance'
+    OPENING_BALANCE: 'opening_balance',
+    PERSON_LENDING: 'person_lending',
+    PERSON_REPAYMENT: 'person_repayment'
 };
 
 const LEDGER_DIRECTIONS = {
@@ -26,10 +28,10 @@ const LEDGER_STATUS = {
     FAILED: 'failed',
     CANCELLED: 'cancelled',
     REVERSED: 'reversed',
-    INSUFFICIENT_BALANCE: 'insufficient_balance'
+    INSUFFICIENT_BALANCE: 'warning'
 };
 
-// ----- ATOMIC LEDGER ENTRY -----
+// ----- CREATE LEDGER ENTRY -----
 async function createLedgerEntry(data) {
     const db = getDB();
     
@@ -49,109 +51,96 @@ async function createLedgerEntry(data) {
         moduleRef: data.moduleRef || null,
         personId: data.personId || null,
         description: data.description || '',
+        notes: data.notes || '',
         tags: data.tags || [],
         parentTransactionId: data.parentTransactionId || null,
-        balanceWarning: data.balanceWarning || false
+        balanceWarning: data.balanceWarning || false,
+        metadata: data.metadata || {}
     };
 
-    // ATOMIC: Ledger + Account Balance
     return await db.atomicTransaction(['ledger', 'accounts'], async (stores, tx) => {
-        // 1. Save ledger entry
         const ledgerStore = stores['ledger'];
+        const accountStore = stores['accounts'];
+
+        // 1. Save ledger entry
         const ledgerId = await new Promise((resolve, reject) => {
             const req = ledgerStore.add(entry);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => reject(req.error);
         });
 
-        // 2. Update account balance(s)
-        const accountStore = stores['accounts'];
-        
-        // Handle transfer separately
-        if (entry.direction === LEDGER_DIRECTIONS.TRANSFER) {
-            // For transfer, balances are updated in createTransferLedger
-            // This prevents double update
-            return { ...entry, id: ledgerId };
-        }
-
-        // Update source account
-        const fromAccount = await new Promise((resolve, reject) => {
-            const req = accountStore.get(entry.accountId);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-
-        if (fromAccount) {
-            const balanceChange = entry.direction === LEDGER_DIRECTIONS.IN ? entry.amount : -entry.amount;
-            fromAccount.balance = (fromAccount.balance || 0) + balanceChange;
-            fromAccount.updatedAt = new Date().toISOString();
-            await new Promise((resolve, reject) => {
-                const req = accountStore.put(fromAccount);
-                req.onsuccess = () => resolve();
+        // 2. Update account balance (skip for transfers - handled separately)
+        if (entry.direction !== LEDGER_DIRECTIONS.TRANSFER) {
+            const account = await new Promise((resolve, reject) => {
+                const req = accountStore.get(entry.accountId);
+                req.onsuccess = () => resolve(req.result);
                 req.onerror = () => reject(req.error);
             });
+
+            if (account) {
+                const balanceChange = entry.direction === LEDGER_DIRECTIONS.IN ? entry.amount : -entry.amount;
+                account.balance = (account.balance || 0) + balanceChange;
+                account.updatedAt = new Date().toISOString();
+                await new Promise((resolve, reject) => {
+                    const req = accountStore.put(account);
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => reject(req.error);
+                });
+            }
         }
 
         return { ...entry, id: ledgerId };
     });
 }
 
-// ----- TRANSFER (Atomic) -----
+// ----- CREATE TRANSFER — MASTER TRANSACTION (FIXED) -----
 async function createTransferLedger(fromAccountId, toAccountId, amount, date, description) {
     const db = getDB();
+
+    if (fromAccountId === toAccountId) {
+        throw new Error('Source and destination accounts must be different.');
+    }
+
+    if (!amount || amount <= 0) {
+        throw new Error('Amount must be greater than zero.');
+    }
 
     return await db.atomicTransaction(['ledger', 'accounts'], async (stores, tx) => {
         const ledgerStore = stores['ledger'];
         const accountStore = stores['accounts'];
 
-        // 1. Out entry
-        const outEntry = {
+        // ✅ SINGLE master transaction — ONE financial identity
+        const masterTxn = {
             id: generateTxnId(),
             date: date || new Date().toISOString(),
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             type: LEDGER_TYPES.TRANSFER,
-            direction: LEDGER_DIRECTIONS.OUT,
+            direction: LEDGER_DIRECTIONS.TRANSFER,
             status: LEDGER_STATUS.COMPLETED,
             amount: amount,
             accountId: fromAccountId,
             toAccountId: toAccountId,
-            description: description || `Transfer to ${toAccountId}`,
+            categoryId: null,
             module: 'transfer',
-            balanceWarning: false
+            moduleRef: null,
+            personId: null,
+            parentTransactionId: null,
+            description: description || `Transfer from ${fromAccountId} to ${toAccountId}`,
+            notes: '',
+            tags: [],
+            balanceWarning: false,
+            metadata: {}
         };
 
-        // 2. In entry
-        const inEntry = {
-            id: generateTxnId(),
-            date: date || new Date().toISOString(),
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString(),
-            type: LEDGER_TYPES.TRANSFER,
-            direction: LEDGER_DIRECTIONS.IN,
-            status: LEDGER_STATUS.COMPLETED,
-            amount: amount,
-            accountId: toAccountId,
-            toAccountId: fromAccountId,
-            description: description || `Transfer from ${fromAccountId}`,
-            module: 'transfer',
-            balanceWarning: false
-        };
-
-        // Save both entries
-        const outId = await new Promise((resolve, reject) => {
-            const req = ledgerStore.add(outEntry);
+        // Save master transaction
+        const txnId = await new Promise((resolve, reject) => {
+            const req = ledgerStore.add(masterTxn);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => reject(req.error);
         });
 
-        const inId = await new Promise((resolve, reject) => {
-            const req = ledgerStore.add(inEntry);
-            req.onsuccess = () => resolve(req.result);
-            req.onerror = () => reject(req.error);
-        });
-
-        // Update balances
+        // Update both account balances
         const fromAccount = await new Promise((resolve, reject) => {
             const req = accountStore.get(fromAccountId);
             req.onsuccess = () => resolve(req.result);
@@ -184,7 +173,7 @@ async function createTransferLedger(fromAccountId, toAccountId, amount, date, de
             });
         }
 
-        return { outTxn: { ...outEntry, id: outId }, inTxn: { ...inEntry, id: inId } };
+        return { ...masterTxn, id: txnId };
     });
 }
 
@@ -194,7 +183,10 @@ async function getLedgerEntries(filters = {}) {
     let entries = await db.readAll('ledger');
 
     if (filters.accountId) {
-        entries = entries.filter(e => e.accountId === filters.accountId || e.toAccountId === filters.accountId);
+        entries = entries.filter(e => 
+            e.accountId === filters.accountId || 
+            e.toAccountId === filters.accountId
+        );
     }
     if (filters.type) entries = entries.filter(e => e.type === filters.type);
     if (filters.module) entries = entries.filter(e => e.module === filters.module);
@@ -211,12 +203,36 @@ async function getLedgerEntries(filters = {}) {
         entries = entries.filter(e => 
             e.description.toLowerCase().includes(search) ||
             e.id.toLowerCase().includes(search) ||
-            (e.tags && e.tags.some(t => t.toLowerCase().includes(search)))
+            (e.tags && e.tags.some(t => t.toLowerCase().includes(search))) ||
+            (e.notes && e.notes.toLowerCase().includes(search))
         );
     }
 
     entries.sort((a, b) => new Date(b.date) - new Date(a.date));
     return entries;
+}
+
+// ----- GET ACCOUNT TRANSACTIONS WITH CONTEXT -----
+async function getAccountTransactions(accountId, filters = {}) {
+    const entries = await getLedgerEntries({ ...filters, accountId });
+    
+    return entries.map(e => {
+        if (e.type === LEDGER_TYPES.TRANSFER) {
+            const isSource = e.accountId === accountId;
+            const isDestination = e.toAccountId === accountId;
+            
+            return {
+                ...e,
+                displayDirection: isSource ? 'out' : 'in',
+                displayAmount: isSource ? -e.amount : e.amount,
+                displayDescription: isSource 
+                    ? `Transfer to ${e.toAccountId}`
+                    : `Transfer from ${e.accountId}`,
+                counterpartyAccountId: isSource ? e.toAccountId : e.accountId
+            };
+        }
+        return e;
+    });
 }
 
 async function getLedgerEntry(id) {
@@ -239,16 +255,16 @@ async function getTotalBalance() {
 async function getPeriodSummary(dateFrom, dateTo) {
     const entries = await getLedgerEntries({ dateFrom, dateTo });
     
-    let income = 0, expense = 0, transfers = 0, allocations = 0;
+    let income = 0, expense = 0, transfers = 0, savingsAllocation = 0;
     
     for (const e of entries) {
         if (e.type === LEDGER_TYPES.INCOME) income += e.amount;
         else if (e.type === LEDGER_TYPES.EXPENSE) expense += e.amount;
         else if (e.type === LEDGER_TYPES.TRANSFER) transfers += e.amount;
-        else if (e.type === LEDGER_TYPES.SAVINGS_CONTRIBUTION) allocations += e.amount;
+        else if (e.type === LEDGER_TYPES.SAVINGS_CONTRIBUTION) savingsAllocation += e.amount;
     }
     
-    return { income, expense, transfers, allocations, net: income - expense };
+    return { income, expense, transfers, savingsAllocation, net: income - expense };
 }
 
 async function getCategoryBreakdown(type, dateFrom, dateTo) {
