@@ -8,6 +8,7 @@
     --primary-dark: #0f0f1a;
     --primary-accent: #4f46e5;
     --primary-accent-light: #818cf8;
+    --primary-accent-dark: #3730a3;
     
     --success: #22c55e;
     --success-bg: #dcfce7;
@@ -15,6 +16,8 @@
     --danger-bg: #fee2e2;
     --warning: #f59e0b;
     --warning-bg: #fef3c7;
+    --info: #3b82f6;
+    --info-bg: #dbeafe;
     
     --bg: #f8fafc;
     --bg-card: #ffffff;
@@ -65,6 +68,7 @@
     --primary-dark: #0f172a;
     --primary-accent: #818cf8;
     --primary-accent-light: #a5b4fc;
+    --primary-accent-dark: #6366f1;
 }
 
 * {
@@ -106,7 +110,6 @@ input, select, textarea {
     font-size: 0.9rem;
 }
 
-/* Scrollbar */
 ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -122,7 +125,6 @@ input, select, textarea {
     background: var(--text-secondary);
 }
 
-/* ----- SIDEBAR ----- */
 .sidebar {
     position: fixed;
     top: 0;
@@ -245,7 +247,6 @@ input, select, textarea {
     color: var(--text);
 }
 
-/* ----- MAIN CONTENT ----- */
 .main-content {
     margin-left: var(--sidebar-width);
     flex: 1;
@@ -254,7 +255,6 @@ input, select, textarea {
     flex-direction: column;
 }
 
-/* ----- TOPBAR ----- */
 .topbar {
     height: var(--topbar-height);
     background: var(--bg-card);
@@ -296,14 +296,12 @@ input, select, textarea {
     font-size: 0.85rem;
 }
 
-/* ----- PAGE CONTAINER ----- */
 .page-container {
     flex: 1;
     padding: 28px 32px 40px;
     overflow-y: auto;
 }
 
-/* ----- CARDS ----- */
 .card {
     background: var(--bg-card);
     border-radius: var(--radius);
@@ -316,12 +314,10 @@ input, select, textarea {
     box-shadow: var(--shadow-md);
 }
 
-/* ----- GRID ----- */
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
 
-/* ----- BUTTONS ----- */
 .btn {
     display: inline-flex;
     align-items: center;
@@ -400,7 +396,6 @@ input, select, textarea {
     justify-content: center;
 }
 
-/* ----- FORMS ----- */
 .form-group {
     margin-bottom: 16px;
 }
@@ -453,7 +448,6 @@ textarea.form-control {
     min-height: 60px;
 }
 
-/* ----- MODAL ----- */
 .modal-overlay {
     display: none;
     position: fixed;
@@ -514,7 +508,6 @@ textarea.form-control {
     background: var(--danger-bg);
 }
 
-/* ----- TOAST ----- */
 .toast-container {
     position: fixed;
     bottom: 24px;
@@ -556,7 +549,6 @@ textarea.form-control {
     to { opacity: 1; transform: translateX(0); }
 }
 
-/* ----- UTILITIES ----- */
 .text-center { text-align: center; }
 .text-right { text-align: right; }
 .text-muted { color: var(--text-muted); }
@@ -579,7 +571,6 @@ textarea.form-control {
 
 .w-full { width: 100%; }
 
-/* ----- EMPTY STATE ----- */
 .empty-state {
     text-align: center;
     padding: 60px 20px;
@@ -594,7 +585,6 @@ textarea.form-control {
     margin-bottom: 16px;
 }
 
-/* ----- PAGINATION ----- */
 .pagination {
     display: flex;
     align-items: center;
@@ -636,7 +626,6 @@ textarea.form-control {
     cursor: not-allowed;
 }
 
-/* ----- RESPONSIVE ----- */
 @media (max-width: 1024px) {
     .grid-4 { grid-template-columns: repeat(2, 1fr); }
     .grid-3 { grid-template-columns: 1fr 1fr; }

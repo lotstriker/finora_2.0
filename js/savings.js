@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Savings Goals (v2.0) — FIXED
+// FINORA — Savings Goals (v2.0) — COMPLETE
 // ============================================
 
 async function loadSavings() {
@@ -19,7 +19,7 @@ async function loadSavings() {
     const html = `
         <div class="savings-page">
             <div class="page-header">
-                <h2>Savings Goals</h2>
+                <h2><i class="fas fa-piggy-bank"></i> Savings Goals</h2>
                 <button class="btn btn-primary" onclick="openAddSavingsModal()">
                     <i class="fas fa-plus"></i> New Goal
                 </button>
@@ -81,8 +81,8 @@ async function loadSavings() {
         .savings-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
         .savings-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
         .savings-header h3 { font-size: 1.05rem; font-weight: 600; }
-        .savings-status { font-size: 0.7rem; padding: 2px 10px; border-radius: 12px; text-transform: uppercase; font-weight: 600; }
-        .savings-status.active { background: #dcfce7; color: #22c55e; }
+        .savings-status { font-size: 0.7rem; padding: 2px 10px; border-radius: var(--radius-full); text-transform: uppercase; font-weight: 600; }
+        .savings-status.active { background: var(--success-bg); color: var(--success); }
         .savings-status.completed { background: #dbeafe; color: #3b82f6; }
         .savings-amounts { display: flex; gap: 24px; margin: 8px 0; }
         .savings-amounts strong { font-size: 1.1rem; }
@@ -219,7 +219,6 @@ async function handleAddSavingsContribution(goalId) {
             if (!confirm(`⚠️ Insufficient balance! Recorded balance: ${formatCurrency(balance)}. Continue anyway?`)) return;
         }
 
-        // ✅ Savings contribution is NOT expense — it's money out
         const txn = await createLedgerEntry({
             type: LEDGER_TYPES.SAVINGS_CONTRIBUTION,
             direction: LEDGER_DIRECTIONS.OUT,
@@ -265,7 +264,6 @@ async function handleAddSavingsContribution(goalId) {
     }
 }
 
-// ✅ NEW: Withdraw from savings
 async function openWithdrawSavings(goalId) {
     const db = getDB();
     const goal = await db.read('savings_goals', goalId);
@@ -324,7 +322,6 @@ async function handleWithdrawSavings(goalId) {
     }
 
     try {
-        // ✅ Savings withdrawal = Money IN
         const txn = await createLedgerEntry({
             type: LEDGER_TYPES.SAVINGS_WITHDRAWAL,
             direction: LEDGER_DIRECTIONS.IN,
@@ -341,7 +338,7 @@ async function handleWithdrawSavings(goalId) {
         await db.create('savings_contributions', {
             id: `SC-${Date.now()}`,
             goalId: goalId,
-            amount: -amount,  // Negative for withdrawal
+            amount: -amount,
             accountId: accountId,
             date: date,
             note: note || null,
@@ -367,32 +364,37 @@ async function viewSavingsDetails(goalId) {
     const saved = contributions.reduce((s, c) => s + c.amount, 0);
     const progress = goal.target > 0 ? (saved / goal.target * 100) : 0;
 
+    let contributionsHtml = '';
+    for (const c of contributions) {
+        contributionsHtml += `
+            <div class="contribution-item ${c.type === 'withdrawal' ? 'withdrawal' : ''}" style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border-light);font-size:0.85rem;">
+                <span>${formatDate(c.date)}</span>
+                <span>${c.note || '—'}</span>
+                <span class="${c.type === 'withdrawal' ? 'text-danger' : 'text-success'}">
+                    ${c.type === 'withdrawal' ? '-' : '+'}${formatCurrency(Math.abs(c.amount))}
+                </span>
+                ${c.transactionId ? `<span class="txn-link" onclick="viewTransaction('${c.transactionId}')"><i class="fas fa-external-link-alt"></i></span>` : ''}
+            </div>
+        `;
+    }
+
     openModal(`Savings: ${goal.name}`, `
         <div class="savings-detail">
-            <div class="savings-detail-summary">
-                <div><span>Target</span> ${formatCurrency(goal.target)}</div>
-                <div><span>Saved</span> <strong>${formatCurrency(saved)}</strong></div>
-                <div><span>Remaining</span> <strong>${formatCurrency(goal.target - saved)}</strong></div>
-                <div><span>Progress</span> ${Math.round(progress)}%</div>
-                ${goal.targetDate ? `<div><span>Target Date</span> ${formatDate(goal.targetDate)}</div>` : ''}
-                <div><span>Status</span> <span class="savings-status ${goal.status}">${goal.status}</span></div>
-                <div><span>Priority</span> ${goal.priority || 'medium'}</div>
+            <div class="savings-detail-summary" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:0.9rem;">
+                <div><span style="color:var(--text-muted);">Target</span> ${formatCurrency(goal.target)}</div>
+                <div><span style="color:var(--text-muted);">Saved</span> <strong>${formatCurrency(saved)}</strong></div>
+                <div><span style="color:var(--text-muted);">Remaining</span> <strong>${formatCurrency(goal.target - saved)}</strong></div>
+                <div><span style="color:var(--text-muted);">Progress</span> ${Math.round(progress)}%</div>
+                ${goal.targetDate ? `<div><span style="color:var(--text-muted);">Target Date</span> ${formatDate(goal.targetDate)}</div>` : ''}
+                <div><span style="color:var(--text-muted);">Status</span> <span class="savings-status ${goal.status}">${goal.status}</span></div>
+                <div><span style="color:var(--text-muted);">Priority</span> ${goal.priority || 'medium'}</div>
             </div>
-            <hr />
-            <h4>Contributions</h4>
+            <hr style="margin:12px 0;" />
+            <h4 style="font-size:0.9rem;font-weight:600;margin-bottom:8px;">Contributions</h4>
             <div class="contribution-list">
-                ${contributions.length > 0 ? contributions.map(c => `
-                    <div class="contribution-item ${c.type === 'withdrawal' ? 'withdrawal' : ''}">
-                        <span>${formatDate(c.date)}</span>
-                        <span>${c.note || '—'}</span>
-                        <span class="${c.type === 'withdrawal' ? 'text-danger' : 'text-success'}">
-                            ${c.type === 'withdrawal' ? '-' : '+'}${formatCurrency(Math.abs(c.amount))}
-                        </span>
-                        ${c.transactionId ? `<span class="txn-link" onclick="viewTransaction('${c.transactionId}')">🔍</span>` : ''}
-                    </div>
-                `).join('') : '<span class="text-muted">No contributions yet</span>'}
+                ${contributions.length > 0 ? contributionsHtml : '<span class="text-muted">No contributions yet</span>'}
             </div>
-            <div class="savings-detail-actions">
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
                 <button class="btn btn-primary" onclick="closeModal();openAddSavingsContribution('${goalId}')">
                     <i class="fas fa-plus"></i> Add Money
                 </button>

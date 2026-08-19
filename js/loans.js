@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Loans & EMI (v2.0) — FIXED
+// FINORA — Loans & EMI (v2.0) — COMPLETE
 // ============================================
 
 const LOAN_TYPES = ['Personal Loan', 'Home Loan', 'Car Loan', 'Bike Loan', 'Education Loan', 'Other'];
@@ -12,7 +12,7 @@ async function loadLoans() {
     const html = `
         <div class="loans-page">
             <div class="page-header">
-                <h2>Loans & EMI</h2>
+                <h2><i class="fas fa-hand-holding-usd"></i> Loans & EMI</h2>
                 <button class="btn btn-primary" onclick="openAddLoanModal()">
                     <i class="fas fa-plus"></i> Add Loan
                 </button>
@@ -67,14 +67,14 @@ async function loadLoans() {
         .loan-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
         .loan-info h3 { font-size: 1.1rem; font-weight: 600; }
         .loan-type { font-size: 0.8rem; color: var(--text-muted); margin-right: 8px; }
-        .loan-status { font-size: 0.7rem; padding: 2px 10px; border-radius: 12px; text-transform: uppercase; font-weight: 600; }
-        .loan-status.active { background: #dcfce7; color: #22c55e; }
+        .loan-status { font-size: 0.7rem; padding: 2px 10px; border-radius: var(--radius-full); text-transform: uppercase; font-weight: 600; }
+        .loan-status.active { background: var(--success-bg); color: var(--success); }
         .loan-status.completed { background: #dbeafe; color: #3b82f6; }
-        .loan-status.defaulted { background: #fee2e2; color: #ef4444; }
+        .loan-status.defaulted { background: var(--danger-bg); color: var(--danger); }
         .loan-amounts { display: flex; gap: 24px; text-align: right; }
         .loan-amounts strong { font-size: 1.1rem; }
         .loan-progress { display: flex; align-items: center; gap: 12px; margin: 8px 0; }
-        .progress-bar { flex: 1; height: 6px; background: var(--primary); border-radius: 4px; transition: width 0.3s; }
+        .progress-bar { flex: 1; height: 6px; background: var(--primary-accent); border-radius: var(--radius-full); transition: width 0.3s; }
         .loan-footer { font-size: 0.85rem; color: var(--text-muted); display: flex; gap: 8px; flex-wrap: wrap; }
         .loan-actions { margin-top: 12px; display: flex; gap: 8px; }
     `;
@@ -162,7 +162,6 @@ async function handleAddLoan() {
         };
         await db.create('loans', loan);
 
-        // Create installments
         const installments = [];
         let dueDate = new Date(startDate);
         for (let i = 1; i <= totalInstallments; i++) {
@@ -209,20 +208,22 @@ async function openAddEMIModal(loanId) {
 
     openModal('Pay EMI', `
         <form id="emiForm">
-            <div class="emi-details">
-                <div><span>Loan</span> <strong>${loan.name}</strong></div>
-                <div><span>Installment</span> <strong>#${nextInstallment.installmentNo} of ${loan.totalInstallments}</strong></div>
-                <div><span>Due Date</span> <strong>${formatDate(nextInstallment.dueDate)}</strong></div>
-                <div><span>Scheduled EMI</span> <strong>${formatCurrency(loan.monthlyEMI)}</strong></div>
+            <div class="emi-details" style="background:var(--bg);padding:12px 16px;border-radius:var(--radius-sm);margin-bottom:16px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:2px 12px;">
+                    <div><span style="color:var(--text-muted);">Loan</span> <strong>${loan.name}</strong></div>
+                    <div><span style="color:var(--text-muted);">Installment</span> <strong>#${nextInstallment.installmentNo} of ${loan.totalInstallments}</strong></div>
+                    <div><span style="color:var(--text-muted);">Due Date</span> <strong>${formatDate(nextInstallment.dueDate)}</strong></div>
+                    <div><span style="color:var(--text-muted);">Scheduled EMI</span> <strong>${formatCurrency(loan.monthlyEMI)}</strong></div>
+                </div>
                 ${isFinal ? `
-                    <div class="text-warning" style="font-size:0.85rem;margin:8px 0;">
-                        ⚠️ This is the final EMI. Payable: ${formatCurrency(loan.remaining)}
+                    <div style="background:var(--warning-bg);padding:8px 12px;border-radius:var(--radius-sm);margin-top:8px;">
+                        <span style="color:var(--warning);"><i class="fas fa-exclamation-triangle"></i> This is the final EMI. Payable: ${formatCurrency(loan.remaining)}</span>
                     </div>
-                    <div><span>Final Payable</span> <strong>${formatCurrency(emiAmount)}</strong></div>
+                    <div style="margin-top:4px;"><span style="color:var(--text-muted);">Final Payable</span> <strong>${formatCurrency(emiAmount)}</strong></div>
                 ` : `
-                    <div><span>Amount</span> <strong>${formatCurrency(emiAmount)}</strong></div>
+                    <div style="margin-top:4px;"><span style="color:var(--text-muted);">Amount</span> <strong>${formatCurrency(emiAmount)}</strong></div>
                 `}
-                <div><span>Remaining Balance</span> <strong>${formatCurrency(loan.remaining)}</strong></div>
+                <div><span style="color:var(--text-muted);">Remaining Balance</span> <strong>${formatCurrency(loan.remaining)}</strong></div>
             </div>
             <div class="form-group">
                 <label>Payment Date</label>
@@ -275,7 +276,6 @@ async function handlePayEMI(loanId, installmentId, emiAmount, isFinal) {
             balanceWarning: balance < emiAmount
         });
 
-        // ✅ Store both due date and payment date
         installment.status = 'paid';
         installment.paidDate = paymentDate;
         installment.paidAmount = emiAmount;
@@ -313,32 +313,37 @@ async function viewLoanDetails(loanId) {
     const installments = await db.getByIndex('loan_installments', 'idx_loanId', loanId);
     installments.sort((a, b) => a.installmentNo - b.installmentNo);
 
+    let installmentsHtml = '';
+    for (const inst of installments) {
+        installmentsHtml += `
+            <div class="installment-item" style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:4px;font-size:0.85rem;">
+                <span><strong>#${inst.installmentNo}</strong></span>
+                <span>Due: ${formatDate(inst.dueDate)}</span>
+                ${inst.paidDate ? `<span>Paid: ${formatDate(inst.paidDate)}</span>` : ''}
+                <span>${formatCurrency(inst.paidAmount || inst.scheduledEMI || 0)}</span>
+                <span class="inst-status" style="font-size:0.65rem;padding:1px 8px;border-radius:var(--radius-full);${inst.status === 'paid' ? 'background:var(--success-bg);color:var(--success);' : 'background:var(--bg);color:var(--text-muted);'}">${inst.status}</span>
+                ${inst.transactionId ? `<span class="inst-txn" onclick="viewTransaction('${inst.transactionId}')"><i class="fas fa-external-link-alt"></i></span>` : ''}
+            </div>
+        `;
+    }
+
     openModal(`Loan: ${loan.name}`, `
         <div class="loan-detail">
-            <div class="loan-detail-summary">
-                <div><span>Type</span> ${loan.type}</div>
-                <div><span>Status</span> <span class="loan-status ${loan.status}">${loan.status}</span></div>
-                <div><span>Total</span> <strong>${formatCurrency(loan.totalAmount)}</strong></div>
-                <div><span>Paid</span> <strong>${formatCurrency(loan.totalAmount - loan.remaining)}</strong></div>
-                <div><span>Remaining</span> <strong>${formatCurrency(loan.remaining)}</strong></div>
-                <div><span>EMI</span> ${formatCurrency(loan.monthlyEMI)}</div>
-                <div><span>Progress</span> ${Math.round((loan.totalAmount - loan.remaining) / loan.totalAmount * 100)}%</div>
+            <div class="loan-detail-summary" style="display:grid;grid-template-columns:1fr 1fr;gap:4px 16px;font-size:0.9rem;">
+                <div><span style="color:var(--text-muted);">Type</span> ${loan.type}</div>
+                <div><span style="color:var(--text-muted);">Status</span> <span class="loan-status ${loan.status}">${loan.status}</span></div>
+                <div><span style="color:var(--text-muted);">Total</span> <strong>${formatCurrency(loan.totalAmount)}</strong></div>
+                <div><span style="color:var(--text-muted);">Paid</span> <strong>${formatCurrency(loan.totalAmount - loan.remaining)}</strong></div>
+                <div><span style="color:var(--text-muted);">Remaining</span> <strong>${formatCurrency(loan.remaining)}</strong></div>
+                <div><span style="color:var(--text-muted);">EMI</span> ${formatCurrency(loan.monthlyEMI)}</div>
+                <div><span style="color:var(--text-muted);">Progress</span> ${Math.round((loan.totalAmount - loan.remaining) / loan.totalAmount * 100)}%</div>
             </div>
-            <hr />
-            <h4>Installment History</h4>
+            <hr style="margin:12px 0;" />
+            <h4 style="font-size:0.9rem;font-weight:600;margin-bottom:8px;">Installment History</h4>
             <div class="installment-list">
-                ${installments.map(inst => `
-                    <div class="installment-item ${inst.status}">
-                        <span>#${inst.installmentNo}</span>
-                        <span>Due: ${formatDate(inst.dueDate)}</span>
-                        ${inst.paidDate ? `<span>Paid: ${formatDate(inst.paidDate)}</span>` : ''}
-                        <span>${formatCurrency(inst.paidAmount || inst.scheduledEMI || 0)}</span>
-                        <span class="inst-status ${inst.status}">${inst.status}</span>
-                        ${inst.transactionId ? `<span class="inst-txn" onclick="viewTransaction('${inst.transactionId}')">🔍</span>` : ''}
-                    </div>
-                `).join('')}
+                ${installmentsHtml}
             </div>
-            <button class="btn btn-primary" onclick="closeModal();openAddEMIModal('${loanId}')">
+            <button class="btn btn-primary" onclick="closeModal();openAddEMIModal('${loanId}')" style="margin-top:12px;">
                 <i class="fas fa-plus"></i> Pay EMI
             </button>
         </div>

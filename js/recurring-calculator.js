@@ -1,78 +1,358 @@
 // ============================================
-// FINORA — Recurring Calculator (Complete)
+// FINORA — Recurring Payments (v2.0) — COMPLETE
 // ============================================
 
-/**
- * Calculate next due date for fixed schedule
- * @param {string} lastDate - Last payment date
- * @param {string} frequency - 'weekly', 'monthly', 'quarterly', 'yearly'
- * @param {number} day - Day of month (for monthly)
- * @returns {Date} Next due date
- */
-function calculateNextDueFixed(lastDate, frequency, day = null) {
-    const d = new Date(lastDate);
-    
-    switch(frequency) {
-        case 'weekly':
-            d.setDate(d.getDate() + 7);
-            break;
-        case 'monthly':
-            d.setMonth(d.getMonth() + 1);
-            if (day && day > 0 && day <= 31) {
-                // Set to the specified day, but handle month boundaries
-                const maxDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
-                d.setDate(Math.min(day, maxDay));
-            }
-            break;
-        case 'quarterly':
-            d.setMonth(d.getMonth() + 3);
-            break;
-        case 'yearly':
-            d.setFullYear(d.getFullYear() + 1);
-            break;
-        default:
-            d.setMonth(d.getMonth() + 1);
-    }
-    
-    // Normalize time
-    d.setHours(0, 0, 0, 0);
-    return d;
-}
+async function loadRecurring() {
+    const container = document.getElementById('pageContainer');
+    const db = getDB();
+    const rules = await db.readAll('recurring_rules');
+    const accounts = await db.readAll('accounts');
+    const accountMap = {};
+    accounts.forEach(a => accountMap[a.id] = a.name);
 
-/**
- * Calculate next due date for validity-based schedule
- * @param {string} lastDate - Last payment date
- * @param {number} validityDays - Number of days validity
- * @returns {Date} Next due date
- */
-function calculateNextDueValidity(lastDate, validityDays) {
-    const d = new Date(lastDate);
-    d.setDate(d.getDate() + validityDays);
-    d.setHours(0, 0, 0, 0);
-    return d;
-}
-
-/**
- * Check if payment is due (with optional buffer)
- * @param {string} nextDue - Next due date
- * @param {number} bufferDays - Days before due to consider as due
- * @returns {boolean} Whether payment is due
- */
-function isPaymentDue(nextDue, bufferDays = 0) {
-    if (!nextDue) return false;
     const today = new Date();
-    const due = new Date(nextDue);
-    today.setHours(0, 0, 0, 0);
-    due.setHours(0, 0, 0, 0);
-    const diffDays = (today - due) / (1000 * 60 * 60 * 24);
-    return diffDays >= -bufferDays;
+    const dueReminders = rules.filter(r => {
+        if (!r.nextDue || r.status !== 'active') return false;
+        const due = new Date(r.nextDue);
+        const diff = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+        return diff <= 3 && diff >= -1;
+    });
+
+    let reminderHtml = '';
+    if (dueReminders.length > 0) {
+        reminderHtml = `
+            <div class="recurring-reminders">
+                <h4><i class="fas fa-bell"></i> Due Soon</h4>
+                ${dueReminders.map(r => `
+                    <div class="reminder-item">
+                        <span>${r.name} — ${formatCurrency(r.amount)}</span>
+                        <span>${getPaymentStatusText(r.nextDue)}</span>
+                        <button class="btn btn-sm btn-primary" onclick="recordRecurringPayment('${r.id}')">
+                            Record Payment
+                        </button>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+    }
+
+    const html = `
+        <div class="recurring-page">
+            <div class="page-header">
+                <h2><i class="fas fa-sync-alt"></i> Recurring Payments</h2>
+                <button class="btn btn-primary" onclick="openAddRecurringModal()">
+                    <i class="fas fa-plus"></i> Add Rule
+                </button>
+            </div>
+
+            ${reminderHtml}
+
+            ${rules.length > 0 ? rules.map(rule => `
+                <div class="recurring-card card">
+                    <div class="recurring-header">
+                        <div>
+                            <h3>${rule.name}</h3>
+                            <span class="recurring-type">${rule.type}</span>
+                            <span class="recurring-status ${rule.status}">${rule.status}</span>
+                            ${isOverdue(rule.nextDue) && rule.status === 'active' ? '<span class="text-danger"><i class="fas fa-exclamation-triangle"></i> Overdue</span>' : ''}
+                        </div>
+                        <div class="recurring-amount">
+                            <strong>${formatCurrency(rule.amount)}</strong>
+                            <span class="text-muted">${formatFrequency(rule)}</span>
+                        </div>
+                    </div>
+                    <div class="recurring-details">
+                        <div><span>Account</span> ${accountMap[rule.accountId] || 'Unknown'}</div>
+                        <div><span>Next Due</span> ${rule.nextDue ? formatDate(rule.nextDue) : '—'}</div>
+                        <div><span>Status</span> ${getPaymentStatusText(rule.nextDue)}</div>
+                        ${rule.validityDays ? `<div><span>Validity</span> ${rule.validityDays} days</div>` : ''}
+                        ${rule.frequency ? `<div><span>Frequency</span> ${rule.frequency}</div>` : ''}
+                    </div>
+                    <div class="recurring-actions">
+                        <button class="btn btn-sm btn-primary" onclick="recordRecurringPayment('${rule.id}')">
+                            <i class="fas fa-check"></i> Record Payment
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="deleteRecurringRule('${rule.id}')">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('') : `
+                <div class="empty-state">
+                    <i class="fas fa-sync-alt"></i>
+                    <p>No recurring rules yet</p>
+                    <button class="btn btn-primary" onclick="openAddRecurringModal()">Add a recurring rule</button>
+                </div>
+            `}
+        </div>
+    `;
+
+    container.innerHTML = html;
+
+    const style = document.createElement('style');
+    style.textContent = `
+        .recurring-reminders { background: var(--bg-card); border-radius: var(--radius); padding: 16px 20px; border: 1px solid var(--warning); margin-bottom: 16px; }
+        .recurring-reminders h4 { margin-bottom: 8px; color: var(--warning); }
+        .reminder-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-bottom: 1px solid var(--border); flex-wrap: wrap; gap: 8px; }
+        .reminder-item:last-child { border-bottom: none; }
+        .recurring-card { padding: 20px 24px; margin-bottom: 16px; }
+        .recurring-header { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; margin-bottom: 8px; }
+        .recurring-header h3 { font-size: 1.05rem; font-weight: 600; }
+        .recurring-type { font-size: 0.8rem; color: var(--text-muted); margin-right: 8px; }
+        .recurring-status { font-size: 0.7rem; padding: 2px 10px; border-radius: var(--radius-full); text-transform: uppercase; font-weight: 600; }
+        .recurring-status.active { background: var(--success-bg); color: var(--success); }
+        .recurring-status.paused { background: var(--warning-bg); color: var(--warning); }
+        .recurring-status.completed { background: #dbeafe; color: #3b82f6; }
+        .recurring-amount { text-align: right; }
+        .recurring-amount strong { font-size: 1.2rem; }
+        .recurring-details { display: flex; gap: 24px; flex-wrap: wrap; font-size: 0.85rem; color: var(--text-muted); margin: 8px 0; }
+        .recurring-details span { color: var(--text-secondary); }
+        .recurring-actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+    `;
+    document.getElementById('page-style').textContent = style.textContent;
 }
 
-/**
- * Get days until payment is due
- * @param {string} nextDue - Next due date
- * @returns {number} Days until due (negative if overdue)
- */
+async function openAddRecurringModal() {
+    const db = getDB();
+    const accounts = await db.readAll('accounts');
+
+    openModal('Add Recurring Rule', `
+        <form id="recurringForm">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" class="form-control" id="recurringName" placeholder="Netflix, Mobile Recharge, etc." required />
+            </div>
+            <div class="form-group">
+                <label>Amount</label>
+                <input type="number" class="form-control" id="recurringAmount" placeholder="₹ 0" required />
+            </div>
+            <div class="form-group">
+                <label>Account</label>
+                <select class="form-control" id="recurringAccount">
+                    ${accounts.map(a => `<option value="${a.id}">${a.name}</option>`).join('')}
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Category (Optional)</label>
+                <select class="form-control" id="recurringCategory">
+                    ${(await db.readAll('categories')).filter(c => c.type === 'expense').map(c => 
+                        `<option value="${c.id}">${c.name}</option>`
+                    ).join('')}
+                    <option value="">None</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Type</label>
+                <select class="form-control" id="recurringType" onchange="toggleRecurringFields()">
+                    <option value="fixed">Fixed Schedule (e.g., Monthly Subscription)</option>
+                    <option value="validity">Validity Based (e.g., 28-day Recharge)</option>
+                </select>
+            </div>
+            <div id="fixedFields">
+                <div class="form-group">
+                    <label>Frequency</label>
+                    <select class="form-control" id="recurringFrequency">
+                        <option value="monthly">Monthly</option>
+                        <option value="weekly">Weekly</option>
+                        <option value="quarterly">Quarterly</option>
+                        <option value="yearly">Yearly</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Day of Month</label>
+                    <input type="number" class="form-control" id="recurringDay" placeholder="e.g., 5" min="1" max="31" />
+                </div>
+            </div>
+            <div id="validityFields" style="display:none;">
+                <div class="form-group">
+                    <label>Validity Period (Days)</label>
+                    <input type="number" class="form-control" id="recurringValidity" placeholder="28, 84, etc." required />
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Start Date</label>
+                <input type="date" class="form-control" id="recurringStartDate" value="${new Date().toISOString().split('T')[0]}" />
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Create Rule</button>
+        </form>
+    `);
+
+    toggleRecurringFields();
+
+    document.getElementById('recurringForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await handleAddRecurringRule();
+    });
+}
+
+function toggleRecurringFields() {
+    const type = document.getElementById('recurringType').value;
+    document.getElementById('fixedFields').style.display = type === 'fixed' ? 'block' : 'none';
+    document.getElementById('validityFields').style.display = type === 'validity' ? 'block' : 'none';
+}
+
+async function handleAddRecurringRule() {
+    const name = document.getElementById('recurringName').value.trim();
+    const amount = parseFloat(document.getElementById('recurringAmount').value);
+    const accountId = document.getElementById('recurringAccount').value;
+    const categoryId = document.getElementById('recurringCategory').value;
+    const type = document.getElementById('recurringType').value;
+    const startDate = document.getElementById('recurringStartDate').value;
+
+    if (!name || !amount) {
+        showToast('Please fill all required fields', 'error');
+        return;
+    }
+
+    try {
+        const db = getDB();
+        const rule = {
+            id: `REC-${Date.now()}`,
+            name, amount, accountId,
+            categoryId: categoryId || null,
+            type, status: 'active',
+            startDate, nextDue: startDate,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        };
+
+        if (type === 'fixed') {
+            rule.frequency = document.getElementById('recurringFrequency').value;
+            rule.day = parseInt(document.getElementById('recurringDay').value) || 1;
+        } else {
+            rule.validityDays = parseInt(document.getElementById('recurringValidity').value) || 28;
+        }
+
+        await db.create('recurring_rules', rule);
+
+        closeModal();
+        showToast('Recurring rule created!', 'success');
+        await loadRecurring();
+    } catch (error) {
+        showToast('Failed to create rule: ' + error.message, 'error');
+    }
+}
+
+async function recordRecurringPayment(ruleId) {
+    const db = getDB();
+    const rule = await db.read('recurring_rules', ruleId);
+    if (!rule) { showToast('Rule not found', 'error'); return; }
+
+    const accounts = await db.readAll('accounts');
+
+    openModal('Record Payment', `
+        <form id="recordPaymentForm">
+            <div class="form-info" style="background:var(--bg);padding:12px 16px;border-radius:var(--radius-sm);margin-bottom:16px;">
+                <div><span style="color:var(--text-muted);">Rule</span> <strong>${rule.name}</strong></div>
+                <div><span style="color:var(--text-muted);">Amount</span> <strong>${formatCurrency(rule.amount)}</strong></div>
+                <div><span style="color:var(--text-muted);">Due</span> ${rule.nextDue ? formatDate(rule.nextDue) : '—'}</div>
+            </div>
+            <div class="form-group">
+                <label>Payment Date</label>
+                <input type="date" class="form-control" id="paymentDate" value="${new Date().toISOString().split('T')[0]}" />
+            </div>
+            <div class="form-group">
+                <label>Account</label>
+                <select class="form-control" id="paymentAccount">
+                    ${accounts.map(a => `<option value="${a.id}" ${a.id === rule.accountId ? 'selected' : ''}>${a.name} (${formatCurrency(a.balance || 0)})</option>`).join('')}
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">Record Payment</button>
+        </form>
+    `);
+
+    document.getElementById('recordPaymentForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        await handleRecordRecurringPayment(ruleId);
+    });
+}
+
+async function handleRecordRecurringPayment(ruleId) {
+    const paymentDate = document.getElementById('paymentDate').value;
+    const accountId = document.getElementById('paymentAccount').value;
+
+    try {
+        const db = getDB();
+        const rule = await db.read('recurring_rules', ruleId);
+        if (!rule) { showToast('Rule not found', 'error'); return; }
+
+        const balance = await getAccountBalance(accountId);
+        if (balance < rule.amount) {
+            if (!confirm(`⚠️ Insufficient balance! Recorded balance: ${formatCurrency(balance)}. Continue anyway?`)) return;
+        }
+
+        const txn = await createLedgerEntry({
+            type: LEDGER_TYPES.EXPENSE,
+            direction: LEDGER_DIRECTIONS.OUT,
+            amount: rule.amount,
+            accountId: accountId,
+            categoryId: rule.categoryId || 'cat-exp-subscriptions',
+            date: paymentDate,
+            description: `Recurring: ${rule.name}`,
+            module: 'recurring',
+            moduleRef: rule.id,
+            status: balance < rule.amount ? LEDGER_STATUS.INSUFFICIENT_BALANCE : LEDGER_STATUS.COMPLETED,
+            balanceWarning: balance < rule.amount
+        });
+
+        let nextDue;
+        const d = new Date(paymentDate);
+        
+        if (rule.type === 'fixed') {
+            if (rule.frequency === 'monthly') d.setMonth(d.getMonth() + 1);
+            else if (rule.frequency === 'weekly') d.setDate(d.getDate() + 7);
+            else if (rule.frequency === 'quarterly') d.setMonth(d.getMonth() + 3);
+            else if (rule.frequency === 'yearly') d.setFullYear(d.getFullYear() + 1);
+            
+            if (rule.day) {
+                const maxDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+                d.setDate(Math.min(rule.day, maxDay));
+            }
+            nextDue = d.toISOString();
+        } else {
+            d.setDate(d.getDate() + (rule.validityDays || 28));
+            nextDue = d.toISOString();
+        }
+
+        rule.nextDue = nextDue;
+        rule.lastPaid = paymentDate;
+        rule.lastTransactionId = txn.id;
+        rule.updatedAt = new Date().toISOString();
+        await db.update('recurring_rules', rule);
+
+        closeModal();
+        showToast('Payment recorded successfully!', 'success');
+        await loadRecurring();
+    } catch (error) {
+        showToast('Failed to record payment: ' + error.message, 'error');
+    }
+}
+
+async function deleteRecurringRule(ruleId) {
+    confirmAction('Delete this recurring rule?', async () => {
+        try {
+            const db = getDB();
+            await db.delete('recurring_rules', ruleId);
+            showToast('Rule deleted', 'warning');
+            await loadRecurring();
+        } catch (error) {
+            showToast('Failed to delete: ' + error.message, 'error');
+        }
+    });
+}
+
+function getPaymentStatusText(nextDue) {
+    if (!nextDue) return 'No due date';
+    const days = getDaysUntilDue(nextDue);
+    if (days < -30) return 'Severely Overdue';
+    if (days < 0) return `Overdue by ${Math.abs(days)} days`;
+    if (days === 0) return 'Due Today';
+    if (days <= 3) return `Due in ${days} days`;
+    if (days <= 7) return `Due in ${days} days`;
+    if (days <= 30) return `Due in ${days} days`;
+    return `Due in ${days} days`;
+}
+
 function getDaysUntilDue(nextDue) {
     if (!nextDue) return Infinity;
     const today = new Date();
@@ -82,11 +362,16 @@ function getDaysUntilDue(nextDue) {
     return Math.ceil((due - today) / (1000 * 60 * 60 * 24));
 }
 
-/**
- * Check if payment is overdue
- * @param {string} nextDue - Next due date
- * @returns {boolean} Whether payment is overdue
- */
+function formatFrequency(rule) {
+    if (rule.type === 'fixed') {
+        const map = { 'weekly': 'Weekly', 'monthly': 'Monthly', 'quarterly': 'Quarterly', 'yearly': 'Yearly' };
+        return map[rule.frequency] || rule.frequency;
+    } else if (rule.type === 'validity') {
+        return `Every ${rule.validityDays} days`;
+    }
+    return 'Unknown';
+}
+
 function isOverdue(nextDue) {
     if (!nextDue) return false;
     const today = new Date();
@@ -96,136 +381,5 @@ function isOverdue(nextDue) {
     return today > due;
 }
 
-/**
- * Calculate next payment date from a given date
- * @param {string|Date} currentDate - Current date
- * @param {Object} rule - Recurring rule object
- * @returns {Date} Next payment date
- */
-function calculateNextPayment(currentDate, rule) {
-    const date = new Date(currentDate);
-    date.setHours(0, 0, 0, 0);
-    
-    if (rule.type === 'fixed') {
-        return calculateNextDueFixed(date, rule.frequency, rule.day);
-    } else if (rule.type === 'validity') {
-        return calculateNextDueValidity(date, rule.validityDays);
-    }
-    return calculateNextDueFixed(date, 'monthly');
-}
-
-/**
- * Get payment status text for display
- * @param {string} nextDue - Next due date
- * @returns {string} Status text
- */
-function getPaymentStatusText(nextDue) {
-    if (!nextDue) return '⚪ No due date';
-    
-    const days = getDaysUntilDue(nextDue);
-    
-    if (days < -30) return '🔴 Severely Overdue';
-    if (days < 0) return `🔴 Overdue by ${Math.abs(days)} days`;
-    if (days === 0) return '🟡 Due Today';
-    if (days <= 3) return `🟠 Due in ${days} days`;
-    if (days <= 7) return `🟡 Due in ${days} days`;
-    if (days <= 30) return `⚪ Due in ${days} days`;
-    return `⚪ Due in ${days} days`;
-}
-
-/**
- * Format frequency for display
- * @param {Object} rule - Recurring rule
- * @returns {string} Human-readable frequency
- */
-function formatFrequency(rule) {
-    if (rule.type === 'fixed') {
-        const map = {
-            'weekly': 'Weekly',
-            'monthly': 'Monthly',
-            'quarterly': 'Quarterly',
-            'yearly': 'Yearly'
-        };
-        return map[rule.frequency] || rule.frequency;
-    } else if (rule.type === 'validity') {
-        return `Every ${rule.validityDays} days`;
-    }
-    return 'Unknown';
-}
-
-/**
- * Get next occurrence count
- * @param {Array} history - Payment history
- * @returns {number} Next occurrence number
- */
-function getNextOccurrence(history) {
-    return (history || []).length + 1;
-}
-
-/**
- * Calculate total paid for a recurring rule
- * @param {Array} payments - Payment history
- * @returns {number} Total amount paid
- */
-function getTotalPaidForRule(payments) {
-    return payments.reduce((sum, p) => sum + p.amount, 0);
-}
-
-/**
- * Get payment history with dates
- * @param {Array} payments - Payment history
- * @returns {Array} Formatted payment history
- */
-function formatPaymentHistory(payments) {
-    return payments.map(p => ({
-        ...p,
-        dateFormatted: formatDate(p.date),
-        amountFormatted: formatCurrency(p.amount)
-    }));
-}
-
-/**
- * Check if a rule should be marked as completed
- * @param {string} status - Current status
- * @param {number} endDate - End date (if any)
- * @returns {boolean} Whether rule is completed
- */
-function isRuleCompleted(status, endDate) {
-    if (status === 'completed') return true;
-    if (!endDate) return false;
-    const today = new Date();
-    const end = new Date(endDate);
-    today.setHours(0, 0, 0, 0);
-    end.setHours(0, 0, 0, 0);
-    return today > end;
-}
-
-/**
- * Estimate next payment date based on history
- * @param {Array} history - Payment history
- * @param {Object} rule - Recurring rule
- * @returns {Date|null} Estimated next payment
- */
-function estimateNextPayment(history, rule) {
-    if (history.length === 0) {
-        return rule.startDate ? new Date(rule.startDate) : null;
-    }
-    
-    const last = history[history.length - 1];
-    return calculateNextPayment(last.date, rule);
-}
-
-/**
- * Get payment urgency level
- * @param {string} nextDue - Next due date
- * @returns {string} Urgency level: 'critical', 'warning', 'info', 'none'
- */
-function getPaymentUrgency(nextDue) {
-    if (!nextDue) return 'none';
-    const days = getDaysUntilDue(nextDue);
-    
-    if (days < 0) return 'critical';
-    if (days <= 3) return 'warning';
-    if (days <= 7) return 'info';
-    return 'none';
-}
+window.loadRecurring = loadRecurring;
+window.recordRecurringPayment = recordRecurringPayment;

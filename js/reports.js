@@ -4,7 +4,6 @@
 
 const ITEMS_PER_PAGE = 25;
 let currentReportPage = 1;
-let reportData = [];
 
 async function loadReports() {
     const container = document.getElementById('pageContainer');
@@ -159,7 +158,7 @@ async function refreshReport() {
 
             ${allTxns.length > 0 ? `
                 <div class="report-section">
-                    <h3>🏆 Highlights</h3>
+                    <h3>Highlights</h3>
                     <div class="report-grid">
                         ${topIncome.length > 0 ? `
                             <div class="report-highlight" onclick="viewTransaction('${topIncome[0].id}')">
@@ -180,7 +179,7 @@ async function refreshReport() {
             ` : ''}
 
             <div class="report-section">
-                <h3>💰 Income Breakdown</h3>
+                <h3>Income Breakdown</h3>
                 ${incomeBreakdown.length > 0 ? `
                     <table class="report-table">
                         <thead><tr><th>Category</th><th>Amount</th><th>Count</th><th>%</th></tr></thead>
@@ -199,7 +198,7 @@ async function refreshReport() {
             </div>
 
             <div class="report-section">
-                <h3>📊 Expense Breakdown</h3>
+                <h3>Expense Breakdown</h3>
                 ${expenseBreakdown.length > 0 ? `
                     <table class="report-table">
                         <thead><tr><th>Category</th><th>Amount</th><th>Count</th><th>%</th></tr></thead>
@@ -218,11 +217,10 @@ async function refreshReport() {
             </div>
         `;
 
-        // Top Expenses with pagination
         if (topExpenses.length > 0) {
             html += `
                 <div class="report-section">
-                    <h3>🔝 Top Expenses</h3>
+                    <h3>Top Expenses</h3>
                     <table class="report-table">
                         <thead><tr><th>Description</th><th>Amount</th><th>Date</th><th>Account</th></tr></thead>
                         <tbody>
@@ -243,7 +241,7 @@ async function refreshReport() {
         if (topIncome.length > 0) {
             html += `
                 <div class="report-section">
-                    <h3>🔝 Top Income</h3>
+                    <h3>Top Income</h3>
                     <table class="report-table">
                         <thead><tr><th>Description</th><th>Amount</th><th>Date</th><th>Account</th></tr></thead>
                         <tbody>
@@ -270,12 +268,12 @@ async function refreshReport() {
 }
 
 function getPeriodLabel(period, dateFrom, dateTo) {
-    if (period === 'month') return `📅 ${formatMonth(dateFrom)}`;
-    if (period === 'lastmonth') return `📅 ${formatMonth(dateFrom)}`;
-    if (period === 'year') return `📅 ${new Date(dateFrom).getFullYear()}`;
-    if (period === 'all') return '📅 All Time';
-    if (period === 'custom') return `📅 ${formatDate(dateFrom)} - ${formatDate(dateTo)}`;
-    return '📅 Report';
+    if (period === 'month') return `${formatMonth(dateFrom)}`;
+    if (period === 'lastmonth') return `${formatMonth(dateFrom)}`;
+    if (period === 'year') return `${new Date(dateFrom).getFullYear()}`;
+    if (period === 'all') return 'All Time';
+    if (period === 'custom') return `${formatDate(dateFrom)} - ${formatDate(dateTo)}`;
+    return 'Report';
 }
 
 async function viewFilteredTransactions(type, dateFrom, dateTo) {

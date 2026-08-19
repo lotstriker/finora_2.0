@@ -8,13 +8,11 @@ async function loadTransfers() {
 
     const entries = await getLedgerEntries({ type: 'transfer' });
 
-    // Group transfers by pair using master transaction
     const transferPairs = [];
     const processed = new Set();
 
     for (const e of entries) {
         if (processed.has(e.id)) continue;
-        // Master transfer transaction has both accountId and toAccountId
         if (e.accountId && e.toAccountId) {
             const fromName = await getAccountName(e.accountId);
             const toName = await getAccountName(e.toAccountId);
@@ -157,12 +155,10 @@ async function openAddTransferModal() {
         </form>
     `);
 
-    // Prevent selecting same account
     document.getElementById('transferFrom').addEventListener('change', () => {
         const from = document.getElementById('transferFrom').value;
         const to = document.getElementById('transferTo');
         if (to.value === from) {
-            // Select first different account
             const options = to.options;
             for (let i = 0; i < options.length; i++) {
                 if (options[i].value !== from) {
@@ -205,7 +201,6 @@ async function handleAddTransfer() {
             }
         }
 
-        // ✅ Single master transfer transaction
         await createTransferLedger(fromAccountId, toAccountId, amount, date, description);
 
         closeModal();

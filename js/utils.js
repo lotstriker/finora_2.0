@@ -2,7 +2,6 @@
 // FINORA — Utilities (v2.0) — COMPLETE
 // ============================================
 
-// ----- FORMATTERS -----
 function formatCurrency(amount) {
     const currency = localStorage.getItem('finora_currency') || '₹';
     const formatted = Math.abs(amount || 0).toLocaleString('en-IN', {
@@ -69,7 +68,30 @@ function toLocalDate(dateStr) {
     return d.toISOString().split('T')[0];
 }
 
-// ----- ID GENERATORS -----
+function addMonthsPreservingDay(date, months) {
+    const d = new Date(date);
+    const targetDay = d.getDate();
+    
+    d.setMonth(d.getMonth() + months);
+    
+    if (d.getDate() !== targetDay) {
+        d.setDate(0);
+    }
+    
+    return d;
+}
+
+function formatSourceType(source) {
+    const map = {
+        'income': 'Income',
+        'transfer': 'Transfer',
+        'person_repayment': 'Person Repayment',
+        'external_funding': 'External Funding',
+        'opening_balance': 'Opening Balance'
+    };
+    return map[source] || source;
+}
+
 function generateTxnId() {
     const d = new Date();
     const year = d.getFullYear();
@@ -93,7 +115,6 @@ function generateMembershipId() {
     return `MEM-${Date.now()}-${String(Math.floor(Math.random() * 1000)).padStart(3,'0')}`;
 }
 
-// ----- TOAST -----
 function showToast(message, type = 'info', duration = 3000) {
     const container = document.getElementById('toastContainer');
     if (!container) return;
@@ -108,7 +129,6 @@ function showToast(message, type = 'info', duration = 3000) {
     }, duration);
 }
 
-// ----- MODAL -----
 function openModal(title, content) {
     const overlay = document.getElementById('modalOverlay');
     const titleEl = document.getElementById('modalTitle');
@@ -124,7 +144,6 @@ function closeModal() {
     if (overlay) overlay.classList.remove('active');
 }
 
-// ----- THEME -----
 function getTheme() {
     return localStorage.getItem('finora_theme') || 'light';
 }
@@ -147,7 +166,6 @@ function updateThemeIcon() {
     btn.innerHTML = `<i class="fas fa-${isDark ? 'sun' : 'moon'}"></i>`;
 }
 
-// ----- CURRENCY -----
 function getCurrency() {
     return localStorage.getItem('finora_currency') || '₹';
 }
@@ -156,7 +174,6 @@ function setCurrency(currency) {
     localStorage.setItem('finora_currency', currency);
 }
 
-// ----- DOWNLOAD -----
 function downloadFile(content, filename, mimeType = 'application/json') {
     const blob = new Blob([content], { type: mimeType });
     const url = URL.createObjectURL(blob);
@@ -167,12 +184,10 @@ function downloadFile(content, filename, mimeType = 'application/json') {
     URL.revokeObjectURL(url);
 }
 
-// ----- CONFIRM -----
 function confirmAction(message, callback) {
     if (confirm(message)) callback();
 }
 
-// ----- DEBOUNCE -----
 function debounce(fn, delay) {
     let timer;
     return function(...args) {
@@ -181,7 +196,6 @@ function debounce(fn, delay) {
     };
 }
 
-// ----- GROUP BY -----
 function groupBy(array, key) {
     return array.reduce((acc, item) => {
         const group = item[key];
@@ -191,7 +205,6 @@ function groupBy(array, key) {
     }, {});
 }
 
-// ----- SUM -----
 function sum(array, key) {
     return array.reduce((acc, item) => acc + (item[key] || 0), 0);
 }

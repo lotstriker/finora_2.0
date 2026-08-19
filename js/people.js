@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — People (v2.0) — FIXED
+// FINORA — People (v2.0) — COMPLETE
 // ============================================
 
 async function loadPeople() {
@@ -10,7 +10,7 @@ async function loadPeople() {
     const html = `
         <div class="people-page">
             <div class="page-header">
-                <h2>People</h2>
+                <h2><i class="fas fa-users"></i> People</h2>
                 <button class="btn btn-primary" onclick="openAddPersonModal()">
                     <i class="fas fa-plus"></i> Add Person
                 </button>
@@ -52,7 +52,7 @@ async function loadPeople() {
         .people-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; }
         .person-card { display: flex; align-items: center; gap: 14px; padding: 16px 20px; cursor: pointer; transition: all var(--transition); }
         .person-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
-        .person-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: var(--primary); flex-shrink: 0; }
+        .person-avatar { width: 44px; height: 44px; border-radius: 50%; background: var(--primary-light); display: flex; align-items: center; justify-content: center; font-size: 1.2rem; color: var(--primary-accent); flex-shrink: 0; }
         .person-info { flex: 1; }
         .person-info h3 { font-size: 1rem; font-weight: 600; }
         .person-archived { font-size: 0.65rem; background: var(--text-muted); color: white; padding: 1px 8px; border-radius: 10px; margin-left: 6px; }
@@ -122,7 +122,6 @@ async function handleAddPerson() {
     }
 }
 
-// ✅ ARCHIVE instead of DELETE
 async function archivePerson(personId) {
     const db = getDB();
     const person = await db.read('people', personId);
@@ -174,6 +173,17 @@ async function viewPersonDetails(personId) {
     const transactions = await getLedgerEntries({ personId });
     const totalRelated = transactions.reduce((s, t) => s + t.amount, 0);
 
+    let txnsHtml = transactions.length > 0 ? transactions.slice(0, 10).map(t => `
+        <div class="txn-item-small" onclick="viewTransaction('${t.id}')">
+            <span>${t.description || t.type}</span>
+            <span class="${t.direction === 'in' ? 'text-success' : 'text-danger'}">
+                ${t.direction === 'in' ? '+' : '-'} ${formatCurrency(t.amount)}
+            </span>
+            ${t.type === 'person_lending' ? '<span class="txn-tag">Lent</span>' : ''}
+            ${t.type === 'person_repayment' ? '<span class="txn-tag">Repayment</span>' : ''}
+        </div>
+    `).join('') : '<span class="text-muted">No related transactions</span>';
+
     openModal(`Person: ${person.name}`, `
         <div class="person-detail">
             <div class="person-detail-info">
@@ -187,14 +197,7 @@ async function viewPersonDetails(personId) {
             <hr />
             <h4>Related Transactions</h4>
             <div class="person-txns">
-                ${transactions.length > 0 ? transactions.slice(0, 10).map(t => `
-                    <div class="txn-item-small" onclick="viewTransaction('${t.id}')">
-                        <span>${t.description || t.type}</span>
-                        <span class="${t.direction === 'in' ? 'text-success' : 'text-danger'}">
-                            ${t.direction === 'in' ? '+' : '-'} ${formatCurrency(t.amount)}
-                        </span>
-                    </div>
-                `).join('') : '<span class="text-muted">No related transactions</span>'}
+                ${txnsHtml}
             </div>
         </div>
     `);

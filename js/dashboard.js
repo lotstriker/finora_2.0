@@ -13,14 +13,13 @@ async function loadDashboard() {
             getMonthEnd(new Date())
         );
 
-        // ----- COMMITTEES -----
-        const committees = await db.readAll('committees');
         let activeCommittees = 0;
         let currentContribution = 0;
-        let totalCommitteeGain = 0;
-        let totalCommitteeBidCost = 0;
+        let totalGain = 0;
+        let totalBidCost = 0;
         const currentMonth = getCurrentMonth();
 
+        const committees = await db.readAll('committees');
         for (const c of committees) {
             if (c.status === 'active') {
                 activeCommittees++;
@@ -28,8 +27,8 @@ async function loadDashboard() {
                 const completedCycles = cycles.filter(cy => cy.status === 'completed');
                 
                 for (const cy of completedCycles) {
-                    totalCommitteeGain += cy.cycleSaving || 0;
-                    totalCommitteeBidCost += cy.winningBid || 0;
+                    totalGain += cy.cycleSaving || 0;
+                    totalBidCost += cy.winningBid || 0;
                 }
                 
                 const currentCycle = cycles.find(cy => 
@@ -40,9 +39,8 @@ async function loadDashboard() {
                 }
             }
         }
-        const committeeNet = totalCommitteeGain - totalCommitteeBidCost;
+        const committeeNet = totalGain - totalBidCost;
 
-        // ----- LOANS -----
         const loans = await db.readAll('loans');
         const activeLoans = loans.filter(l => l.status === 'active');
         let nextEMI = Infinity;
@@ -55,7 +53,6 @@ async function loadDashboard() {
         }
         if (nextEMI === Infinity) nextEMI = 0;
 
-        // ----- SAVINGS -----
         const savingsGoals = await db.readAll('savings_goals');
         const activeSavings = savingsGoals.filter(g => g.status === 'active');
         let totalSaved = 0;
@@ -73,7 +70,6 @@ async function loadDashboard() {
             savingsProgress = Math.round(savingsProgress / activeSavings.length);
         }
 
-        // ----- RECENT TRANSACTIONS -----
         const recentTxns = await getLedgerEntries({ limit: 5 });
 
         const netCashFlow = monthlySummary.income - monthlySummary.expense;
@@ -130,7 +126,6 @@ async function loadDashboard() {
                 </div>
 
                 <div class="dashboard-grid">
-                    <!-- Bid & Save -->
                     <div class="card module-card" onclick="navigateTo('bid-save')">
                         <div class="module-card-header">
                             <i class="fas fa-handshake" style="color: var(--primary-accent);"></i>
@@ -143,7 +138,7 @@ async function loadDashboard() {
                                 <strong>${formatCurrency(currentContribution)}</strong>
                             </div>
                             <div class="module-stat">
-                                <span>Net Gain</span>
+                                <span>Net Result</span>
                                 <strong class="${committeeNet >= 0 ? 'text-success' : 'text-danger'}">
                                     ${formatCurrency(committeeNet)}
                                 </strong>
@@ -151,7 +146,6 @@ async function loadDashboard() {
                         </div>
                     </div>
 
-                    <!-- Loans -->
                     <div class="card module-card" onclick="navigateTo('loans')">
                         <div class="module-card-header">
                             <i class="fas fa-hand-holding-usd" style="color: var(--warning);"></i>
@@ -176,7 +170,6 @@ async function loadDashboard() {
                         </div>
                     </div>
 
-                    <!-- Savings -->
                     <div class="card module-card" onclick="navigateTo('savings')">
                         <div class="module-card-header">
                             <i class="fas fa-piggy-bank" style="color: var(--success);"></i>
@@ -201,7 +194,6 @@ async function loadDashboard() {
                         </div>
                     </div>
 
-                    <!-- Recent Transactions -->
                     <div class="card">
                         <div class="module-card-header">
                             <i class="fas fa-clock" style="color: var(--text-muted);"></i>
@@ -215,7 +207,7 @@ async function loadDashboard() {
                                 let displayDesc = txn.description || txn.type;
                                 
                                 if (txn.type === 'transfer') {
-                                    displayDesc = `Transfer`;
+                                    displayDesc = 'Transfer';
                                     displaySign = '';
                                 }
                                 
@@ -303,5 +295,4 @@ function getTimeOfDay() {
     return 'Evening';
 }
 
-// ✅ Make sure these are globally accessible
 window.loadDashboard = loadDashboard;

@@ -1,9 +1,9 @@
 // ============================================
-// FINORA — Database Schema (v2.0) — FIXED
+// FINORA — Database Schema (v2.0) — COMPLETE
 // ============================================
 
 const DB_NAME = 'FinoraDB';
-const DB_VERSION = 3;  // ✅ Updated from 2 to 3
+const DB_VERSION = 4;
 
 const STORES = [
     {
@@ -28,7 +28,7 @@ const STORES = [
         indexes: [
             { name: 'idx_name', keyPath: 'name' },
             { name: 'idx_type', keyPath: 'type' },
-            { name: 'idx_status', keyPath: 'status' }  // ✅ ADDED
+            { name: 'idx_status', keyPath: 'status' }
         ]
     },
     {
@@ -36,7 +36,7 @@ const STORES = [
         keyPath: 'id',
         indexes: [
             { name: 'idx_name', keyPath: 'name' },
-            { name: 'idx_status', keyPath: 'status' }  // ✅ ADDED
+            { name: 'idx_status', keyPath: 'status' }
         ]
     },
     {
@@ -148,7 +148,6 @@ async function initDefaultCategories() {
     if (existing.length > 0) return;
 
     const defaults = [
-        // Expenses
         { id: 'cat-exp-food', name: 'Food', type: 'expense', isSystem: true, status: 'active' },
         { id: 'cat-exp-groceries', name: 'Groceries', type: 'expense', isSystem: true, status: 'active' },
         { id: 'cat-exp-transport', name: 'Transport', type: 'expense', isSystem: true, status: 'active' },
@@ -162,7 +161,6 @@ async function initDefaultCategories() {
         { id: 'cat-exp-subscriptions', name: 'Subscriptions', type: 'expense', isSystem: true, status: 'active' },
         { id: 'cat-exp-insurance', name: 'Insurance', type: 'expense', isSystem: true, status: 'active' },
         { id: 'cat-exp-other', name: 'Other', type: 'expense', isSystem: true, status: 'active' },
-        // Income
         { id: 'cat-inc-salary', name: 'Salary', type: 'income', isSystem: true, status: 'active' },
         { id: 'cat-inc-freelance', name: 'Freelance', type: 'income', isSystem: true, status: 'active' },
         { id: 'cat-inc-business', name: 'Business', type: 'income', isSystem: true, status: 'active' },

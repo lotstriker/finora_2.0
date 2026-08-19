@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Central Ledger (v2.0) — FIXED
+// FINORA — Central Ledger (v2.0) — COMPLETE
 // ============================================
 
 const LEDGER_TYPES = {
@@ -13,7 +13,8 @@ const LEDGER_TYPES = {
     SAVINGS_WITHDRAWAL: 'savings_withdrawal',
     OPENING_BALANCE: 'opening_balance',
     PERSON_LENDING: 'person_lending',
-    PERSON_REPAYMENT: 'person_repayment'
+    PERSON_REPAYMENT: 'person_repayment',
+    EXTERNAL_FUNDING: 'external_funding'
 };
 
 const LEDGER_DIRECTIONS = {
@@ -31,7 +32,6 @@ const LEDGER_STATUS = {
     INSUFFICIENT_BALANCE: 'warning'
 };
 
-// ----- CREATE LEDGER ENTRY -----
 async function createLedgerEntry(data) {
     const db = getDB();
     
@@ -62,14 +62,12 @@ async function createLedgerEntry(data) {
         const ledgerStore = stores['ledger'];
         const accountStore = stores['accounts'];
 
-        // 1. Save ledger entry
         const ledgerId = await new Promise((resolve, reject) => {
             const req = ledgerStore.add(entry);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => reject(req.error);
         });
 
-        // 2. Update account balance (skip for transfers - handled separately)
         if (entry.direction !== LEDGER_DIRECTIONS.TRANSFER) {
             const account = await new Promise((resolve, reject) => {
                 const req = accountStore.get(entry.accountId);
@@ -93,7 +91,6 @@ async function createLedgerEntry(data) {
     });
 }
 
-// ----- CREATE TRANSFER — MASTER TRANSACTION (FIXED) -----
 async function createTransferLedger(fromAccountId, toAccountId, amount, date, description) {
     const db = getDB();
 
@@ -109,7 +106,6 @@ async function createTransferLedger(fromAccountId, toAccountId, amount, date, de
         const ledgerStore = stores['ledger'];
         const accountStore = stores['accounts'];
 
-        // ✅ SINGLE master transaction — ONE financial identity
         const masterTxn = {
             id: generateTxnId(),
             date: date || new Date().toISOString(),
@@ -133,14 +129,12 @@ async function createTransferLedger(fromAccountId, toAccountId, amount, date, de
             metadata: {}
         };
 
-        // Save master transaction
         const txnId = await new Promise((resolve, reject) => {
             const req = ledgerStore.add(masterTxn);
             req.onsuccess = () => resolve(req.result);
             req.onerror = () => reject(req.error);
         });
 
-        // Update both account balances
         const fromAccount = await new Promise((resolve, reject) => {
             const req = accountStore.get(fromAccountId);
             req.onsuccess = () => resolve(req.result);
@@ -177,7 +171,6 @@ async function createTransferLedger(fromAccountId, toAccountId, amount, date, de
     });
 }
 
-// ----- READ LEDGER -----
 async function getLedgerEntries(filters = {}) {
     const db = getDB();
     let entries = await db.readAll('ledger');
@@ -212,15 +205,12 @@ async function getLedgerEntries(filters = {}) {
     return entries;
 }
 
-// ----- GET ACCOUNT TRANSACTIONS WITH CONTEXT -----
 async function getAccountTransactions(accountId, filters = {}) {
     const entries = await getLedgerEntries({ ...filters, accountId });
     
     return entries.map(e => {
         if (e.type === LEDGER_TYPES.TRANSFER) {
             const isSource = e.accountId === accountId;
-            const isDestination = e.toAccountId === accountId;
-            
             return {
                 ...e,
                 displayDirection: isSource ? 'out' : 'in',
@@ -319,4 +309,44 @@ async function reverseTransaction(txnId, reason = 'Correction') {
     };
 
     return await createLedgerEntry(reversal);
+}
+
+async function reconcileAccountBalance(accountId) {
+    const entries = await getLedgerEntries({ accountId });
+    
+    let balance = 0;
+    for (const e of entries) {
+        if (e.type === LEDGER_TYPES.TRANSFER) {
+            if (e.accountId === accountId) {
+                balance -= e.amount;
+            } else if (e.toAccountId === accountId) {
+                balance += e.amount;
+            }
+        } else {
+            if (e.direction === LEDGER_DIRECTIONS.IN) {
+                balance += e.amount;
+            } else if (e.direction === LEDGER_DIRECTIONS.OUT) {
+                balance -= e.amount;
+            }
+        }
+    }
+    
+    return balance;
+}
+
+async function verifyAndFixAccountBalance(accountId) {
+    const db = getDB();
+    const account = await db.read('accounts', accountId);
+    if (!account) return null;
+    
+    const ledgerBalance = await reconcileAccountBalance(accountId);
+    
+    if (Math.abs(account.balance - ledgerBalance) > 0.01) {
+        account.balance = ledgerBalance;
+        account.updatedAt = new Date().toISOString();
+        await db.update('accounts', account);
+        return { fixed: true, oldBalance: account.balance, newBalance: ledgerBalance };
+    }
+    
+    return { fixed: false, balance: account.balance };
 }

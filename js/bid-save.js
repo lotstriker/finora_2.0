@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Bid & Save (v2.0) — COMPLETE UI — FIXED
+// FINORA — Bid & Save (v2.0) — COMPLETE
 // ============================================
 
 async function loadBidSave() {
@@ -7,7 +7,6 @@ async function loadBidSave() {
     const db = getDB();
     const committees = await db.readAll('committees');
 
-    // Calculate summary stats
     let activeCount = 0;
     let currentContribution = 0;
     let totalGain = 0;
@@ -35,7 +34,6 @@ async function loadBidSave() {
     }
     const netResult = totalGain - totalBidCost;
 
-    // ✅ Build committee cards HTML
     let committeeCardsHtml = '';
     
     if (committees.length > 0) {
@@ -145,7 +143,6 @@ async function loadBidSave() {
     document.getElementById('page-style').textContent = style.textContent;
 }
 
-// ----- ADD COMMITTEE -----
 async function openAddCommitteeModal() {
     openModal('New Committee', `
         <form id="committeeForm">
@@ -210,6 +207,11 @@ async function handleAddCommittee() {
         return;
     }
 
+    if (memberships > members) {
+        showToast('Memberships cannot exceed total members', 'error');
+        return;
+    }
+
     try {
         await createCommittee({ name, totalAmount, members, memberships, startDate });
         closeModal();
@@ -220,7 +222,6 @@ async function handleAddCommittee() {
     }
 }
 
-// ----- VIEW COMMITTEE DETAILS -----
 async function viewCommitteeDetails(committeeId) {
     const db = getDB();
     const committee = await db.read('committees', committeeId);
@@ -243,15 +244,13 @@ async function viewCommitteeDetails(committeeId) {
     for (const cycle of cycles) {
         const isSkipped = cycle.status === 'skipped';
         const isCompleted = cycle.status === 'completed';
-        const hasBid = cycle.winningBid > 0;
         cyclesHtml += `
             <div class="cycle-item" style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;border-radius:var(--radius-sm);border:1px solid var(--border);margin-bottom:4px;font-size:0.85rem;">
                 <span><strong>Month ${cycle.cycleNo}</strong> - ${formatMonth(cycle.month)}</span>
                 <span>Bid: ${cycle.winningBid ? formatCurrency(cycle.winningBid) : '—'}</span>
                 <span>Payable: ${formatCurrency(cycle.totalPayable || 0)}</span>
-                ${cycle.userWon ? `<span class="text-success">🏆 Won</span>` : ''}
+                ${cycle.userWon ? `<span class="text-success"><i class="fas fa-trophy"></i> Won</span>` : ''}
                 <span class="cycle-status" style="font-size:0.65rem;padding:1px 8px;border-radius:var(--radius-full);${isSkipped ? 'background:var(--warning-bg);color:var(--warning);' : isCompleted ? 'background:var(--success-bg);color:var(--success);' : 'background:var(--bg);color:var(--text-muted);'}">${cycle.status}</span>
-                ${hasBid && !isSkipped ? `<span style="font-size:0.7rem;color:var(--text-muted);">⚠️</span>` : ''}
             </div>
         `;
     }
@@ -287,7 +286,6 @@ async function viewCommitteeDetails(committeeId) {
     `);
 }
 
-// ----- RECORD CYCLE -----
 async function openAddCycleModal(committeeId) {
     const db = getDB();
     const committee = await db.read('committees', committeeId);
@@ -301,7 +299,9 @@ async function openAddCycleModal(committeeId) {
 
     let accountsHtml = '';
     for (const a of accounts) {
-        accountsHtml += `<option value="${a.id}">${a.name} (${formatCurrency(a.balance || 0)})</option>`;
+        if (a.status !== 'archived') {
+            accountsHtml += `<option value="${a.id}">${a.name} (${formatCurrency(a.balance || 0)})</option>`;
+        }
     }
 
     openModal('Record Month', `
@@ -313,42 +313,68 @@ async function openAddCycleModal(committeeId) {
                 <div><span style="color:var(--text-muted);">Base Contribution</span> ${formatCurrency(committee.baseContribution)}</div>
                 <div><span style="color:var(--text-muted);">Your Memberships</span> ${memberships.length}</div>
             </div>
+            
             <div class="form-group">
                 <label>Winning Bid</label>
                 <input type="number" class="form-control" id="cycleBid" placeholder="₹ 0" value="0" />
                 <small class="text-muted">Enter 0 for no bid (skip)</small>
             </div>
+            
             <div class="form-group">
                 <label>Did You Win?</label>
-                <select class="form-control" id="cycleWon">
+                <select class="form-control" id="cycleWon" onchange="togglePayoutSection()">
                     <option value="no">No</option>
                     <option value="yes">Yes</option>
                 </select>
             </div>
+            
             <div class="form-group">
                 <label>Winner Name (Optional)</label>
                 <input type="text" class="form-control" id="cycleWinnerName" placeholder="Name of winner" />
             </div>
+
             <div class="form-group">
-                <label>Account (for payment)</label>
-                <select class="form-control" id="cycleAccount">
+                <label>Payment Account *</label>
+                <select class="form-control" id="cyclePaymentAccount">
                     ${accountsHtml}
                 </select>
+                <small class="text-muted">Account used for your contribution</small>
             </div>
+
+            <div id="payoutSection" style="display:none;">
+                <div class="form-group">
+                    <label>Payout Destination</label>
+                    <select class="form-control" id="cyclePayoutAccount">
+                        <option value="">Keep Outside Finora</option>
+                        ${accountsHtml}
+                    </select>
+                    <small class="text-muted">Select an account to receive payout, or keep outside Finora</small>
+                </div>
+            </div>
+
             <div class="form-group">
                 <label>Payment Date</label>
                 <input type="date" class="form-control" id="cyclePaymentDate" value="${new Date().toISOString().split('T')[0]}" />
             </div>
+
             <div id="cycleCalculation" style="background:var(--bg);padding:12px 16px;border-radius:var(--radius-sm);margin:12px 0;">
                 <div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Bid Discount</span> <strong id="calcDiscount">₹ 0</strong></div>
-                <div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Your Contribution</span> <strong id="calcContribution">₹ 0</strong></div>
+                <div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Your Payable</span> <strong id="calcContribution">₹ 0</strong></div>
                 <div style="display:flex;justify-content:space-between;padding:2px 0;"><span>Payout (if won)</span> <strong id="calcPayout">₹ 0</strong></div>
             </div>
+
             <button type="submit" class="btn btn-primary btn-block">Save Month</button>
         </form>
     `);
 
+    window.togglePayoutSection = function() {
+        const won = document.getElementById('cycleWon').value === 'yes';
+        document.getElementById('payoutSection').style.display = won ? 'block' : 'none';
+        updateCycleCalc(committee);
+    };
+
     document.getElementById('cycleBid').addEventListener('input', () => updateCycleCalc(committee));
+    document.getElementById('cycleWon').addEventListener('change', () => updateCycleCalc(committee));
     updateCycleCalc(committee);
 
     document.getElementById('cycleForm').addEventListener('submit', async (e) => {
@@ -359,13 +385,17 @@ async function openAddCycleModal(committeeId) {
 
 function updateCycleCalc(committee) {
     const bid = parseFloat(document.getElementById('cycleBid').value) || 0;
+    const userWon = document.getElementById('cycleWon').value === 'yes';
+    const memberships = parseInt(document.getElementById('committeeMemberships')?.value) || 1;
+    
     const discount = committee.members > 0 ? bid / committee.members : 0;
     const contribution = committee.baseContribution - discount;
     const payout = bid > 0 ? committee.totalAmount - bid : 0;
+    const totalPayable = contribution * memberships;
 
     document.getElementById('calcDiscount').textContent = formatCurrency(discount);
-    document.getElementById('calcContribution').textContent = formatCurrency(contribution);
-    document.getElementById('calcPayout').textContent = formatCurrency(payout);
+    document.getElementById('calcContribution').textContent = formatCurrency(totalPayable);
+    document.getElementById('calcPayout').textContent = userWon ? formatCurrency(payout) : '₹ 0';
 }
 
 async function handleSaveCycle(committeeId, cycleId) {
@@ -376,10 +406,20 @@ async function handleSaveCycle(committeeId, cycleId) {
     const bid = parseFloat(document.getElementById('cycleBid').value) || 0;
     const userWon = document.getElementById('cycleWon').value === 'yes';
     const winnerName = document.getElementById('cycleWinnerName').value.trim();
-    const accountId = document.getElementById('cycleAccount').value;
+    const paymentAccountId = document.getElementById('cyclePaymentAccount').value;
+    const payoutAccountId = document.getElementById('cyclePayoutAccount').value || null;
     const paymentDate = document.getElementById('cyclePaymentDate').value;
 
-    // Warning for out-of-range bid
+    if (!paymentAccountId) {
+        showToast('Please select a payment account', 'error');
+        return;
+    }
+
+    if (bid > committee.totalAmount) {
+        showToast(`Bid cannot exceed committee amount (${formatCurrency(committee.totalAmount)})`, 'error');
+        return;
+    }
+
     if (bid > 0 && bid > committee.totalAmount * 0.9) {
         if (!confirm(`⚠️ Bid amount (${formatCurrency(bid)}) is higher than recommended. Continue anyway?`)) {
             return;
@@ -391,7 +431,8 @@ async function handleSaveCycle(committeeId, cycleId) {
             winningBid: bid,
             userWon: userWon,
             winnerName: winnerName,
-            accountId: accountId,
+            paymentAccountId: paymentAccountId,
+            payoutAccountId: payoutAccountId,
             paymentDate: paymentDate
         });
 
@@ -403,7 +444,6 @@ async function handleSaveCycle(committeeId, cycleId) {
     }
 }
 
-// ----- SKIP CYCLE -----
 async function openSkipCycleModal(committeeId) {
     const db = getDB();
     const committee = await db.read('committees', committeeId);
@@ -412,18 +452,66 @@ async function openSkipCycleModal(committeeId) {
     const nextCycle = await getNextPendingCycle(committeeId);
     if (!nextCycle) { showToast('All cycles completed!', 'info'); return; }
 
-    if (confirm(`Skip month ${nextCycle.cycleNo} (${formatMonth(nextCycle.month)})? No bid will be recorded.`)) {
+    const accounts = await db.readAll('accounts');
+    let accountsHtml = '';
+    for (const a of accounts) {
+        if (a.status !== 'archived') {
+            accountsHtml += `<option value="${a.id}">${a.name} (${formatCurrency(a.balance || 0)})</option>`;
+        }
+    }
+
+    openModal('Skip Month', `
+        <form id="skipForm">
+            <div class="form-info" style="background:var(--bg);padding:12px 16px;border-radius:var(--radius-sm);margin-bottom:16px;">
+                <div><span style="color:var(--text-muted);">Committee</span> <strong>${committee.name}</strong></div>
+                <div><span style="color:var(--text-muted);">Month</span> <strong>${formatMonth(nextCycle.month)}</strong></div>
+                <div><span style="color:var(--text-muted);">Cycle</span> <strong>${nextCycle.cycleNo}/${committee.duration}</strong></div>
+                <div><span style="color:var(--text-muted);">Base Contribution</span> ${formatCurrency(committee.baseContribution)}</div>
+            </div>
+            
+            <div class="form-group">
+                <label>Payment Account *</label>
+                <select class="form-control" id="skipPaymentAccount">
+                    ${accountsHtml}
+                </select>
+                <small class="text-muted">Account used for your normal contribution</small>
+            </div>
+            
+            <div class="form-group">
+                <label>Payment Date</label>
+                <input type="date" class="form-control" id="skipPaymentDate" value="${new Date().toISOString().split('T')[0]}" />
+            </div>
+            
+            <div style="background:var(--warning-bg);padding:12px 16px;border-radius:var(--radius-sm);margin:12px 0;">
+                <span style="color:var(--warning);"><i class="fas fa-exclamation-triangle"></i> No bid will be recorded. Contribution will be normal.</span>
+            </div>
+            
+            <button type="submit" class="btn btn-warning btn-block">Skip Month</button>
+            <button type="button" class="btn btn-secondary btn-block" onclick="closeModal()">Cancel</button>
+        </form>
+    `);
+
+    document.getElementById('skipForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const paymentAccountId = document.getElementById('skipPaymentAccount').value;
+        const paymentDate = document.getElementById('skipPaymentDate').value;
+        
+        if (!paymentAccountId) {
+            showToast('Please select a payment account', 'error');
+            return;
+        }
+        
         try {
-            await skipCommitteeMonth(committeeId, nextCycle.id);
+            await skipCommitteeMonth(committeeId, nextCycle.id, paymentAccountId, paymentDate);
+            closeModal();
             showToast('Month skipped successfully', 'warning');
             await loadBidSave();
         } catch (error) {
             showToast('Failed to skip month: ' + error.message, 'error');
         }
-    }
+    });
 }
 
-// ----- MAKE FUNCTIONS GLOBALLY ACCESSIBLE -----
 window.loadBidSave = loadBidSave;
 window.openAddCommitteeModal = openAddCommitteeModal;
 window.viewCommitteeDetails = viewCommitteeDetails;

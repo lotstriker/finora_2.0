@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Transactions (v2.0) — FIXED
+// FINORA — Transactions (v2.0) — COMPLETE
 // ============================================
 
 async function loadTransactions() {
@@ -21,8 +21,7 @@ async function loadTransactions() {
     const html = `
         <div class="transactions-page">
             <div class="page-header">
-                <h2>All Transactions</h2>
-                <!-- ✅ No Add button here -->
+                <h2><i class="fas fa-list-ul"></i> All Transactions</h2>
             </div>
 
             <div class="txn-summary">
@@ -33,7 +32,6 @@ async function loadTransactions() {
 
             <div class="txn-list">
                 ${entries.length > 0 ? entries.map(txn => {
-                    // ✅ Handle transfer display correctly
                     let displayAmount = txn.amount;
                     let displaySign = '';
                     let displayDesc = txn.description || txn.type;
@@ -113,10 +111,12 @@ async function loadTransactions() {
         .txn-icon.loan_emi { background: #f59e0b; }
         .txn-icon.savings_contribution { background: #06b6d4; }
         .txn-icon.opening_balance { background: #6366f1; }
+        .txn-icon.external_funding { background: #6366f1; }
+        .txn-icon.person_repayment { background: #6366f1; }
         .txn-details { flex: 1; }
         .txn-desc { font-weight: 500; }
         .txn-meta { font-size: 0.75rem; color: var(--text-muted); display: flex; gap: 4px; flex-wrap: wrap; }
-        .txn-module { background: var(--primary-light); color: var(--primary); padding: 0 6px; border-radius: 4px; font-size: 0.7rem; }
+        .txn-module { background: var(--primary-light); color: var(--primary-accent); padding: 0 6px; border-radius: 4px; font-size: 0.7rem; }
         .txn-warning { color: var(--warning); font-weight: 600; }
         .txn-item-right { text-align: right; flex-shrink: 0; }
         .txn-amount { font-weight: 600; font-size: 1rem; }
@@ -135,7 +135,9 @@ function getTxnIcon(type) {
         'loan_emi': 'fa-credit-card',
         'savings_contribution': 'fa-piggy-bank',
         'savings_withdrawal': 'fa-piggy-bank',
-        'opening_balance': 'fa-plus-circle'
+        'opening_balance': 'fa-plus-circle',
+        'external_funding': 'fa-plus-circle',
+        'person_repayment': 'fa-hand-holding-heart'
     };
     return icons[type] || 'fa-circle';
 }
@@ -151,6 +153,9 @@ async function viewTransaction(txnId) {
     const account = await db.read('accounts', txn.accountId);
     const toAccount = txn.toAccountId ? await db.read('accounts', txn.toAccountId) : null;
     const category = txn.categoryId ? await db.read('categories', txn.categoryId) : null;
+    const person = txn.personId ? await db.read('people', txn.personId) : null;
+
+    let personHtml = person ? `<div class="txn-detail-row"><span>Person</span><span>${person.name}</span></div>` : '';
 
     openModal('Transaction Details', `
         <div class="txn-detail">
@@ -164,8 +169,10 @@ async function viewTransaction(txnId) {
             <div class="txn-detail-row"><span>Account</span><span>${account ? account.name : 'Unknown'}</span></div>
             ${toAccount ? `<div class="txn-detail-row"><span>To Account</span><span>${toAccount.name}</span></div>` : ''}
             ${category ? `<div class="txn-detail-row"><span>Category</span><span>${category.name}</span></div>` : ''}
+            ${personHtml}
             <div class="txn-detail-row"><span>Date</span><span>${formatDateTime(txn.date)}</span></div>
             <div class="txn-detail-row"><span>Description</span><span>${txn.description || '—'}</span></div>
+            ${txn.notes ? `<div class="txn-detail-row"><span>Notes</span><span>${txn.notes}</span></div>` : ''}
             ${txn.module ? `<div class="txn-detail-row"><span>Module</span><span>${txn.module}</span></div>` : ''}
             ${txn.moduleRef ? `<div class="txn-detail-row"><span>Reference</span><span>${txn.moduleRef}</span></div>` : ''}
             <div class="txn-detail-actions">

@@ -1,10 +1,10 @@
 // ============================================
-// FINORA — Global Search (v2.0) — ENRICHED — FIXED
+// FINORA — Global Search (v2.0) — COMPLETE
 // ============================================
 
 let searchFilter = 'all';
 let currentPage = 1;
-const SEARCH_ITEMS_PER_PAGE = 25;  // ✅ Renamed to avoid conflict
+const SEARCH_ITEMS_PER_PAGE = 25;
 
 async function loadSearch() {
     const container = document.getElementById('pageContainer');
@@ -111,7 +111,6 @@ async function performGlobalSearch(query) {
         recurring: []
     };
 
-    // Search Transactions — enriched
     const allTxns = await getLedgerEntries();
     const matchingTxns = allTxns.filter(t => 
         t.id.toLowerCase().includes(lowerQuery) ||
@@ -132,7 +131,6 @@ async function performGlobalSearch(query) {
         tag: 'Transaction'
     }));
 
-    // Search People
     const people = await db.readAll('people');
     for (const p of people) {
         if (p.name.toLowerCase().includes(lowerQuery) ||
@@ -148,7 +146,6 @@ async function performGlobalSearch(query) {
         }
     }
 
-    // Search Committees
     const committees = await db.readAll('committees');
     for (const c of committees) {
         if (c.name.toLowerCase().includes(lowerQuery)) {
@@ -162,7 +159,6 @@ async function performGlobalSearch(query) {
         }
     }
 
-    // Search Loans
     const loans = await db.readAll('loans');
     for (const l of loans) {
         if (l.name.toLowerCase().includes(lowerQuery)) {
@@ -176,7 +172,6 @@ async function performGlobalSearch(query) {
         }
     }
 
-    // Search Savings Goals
     const goals = await db.readAll('savings_goals');
     for (const g of goals) {
         if (g.name.toLowerCase().includes(lowerQuery)) {
@@ -190,7 +185,6 @@ async function performGlobalSearch(query) {
         }
     }
 
-    // Search Recurring
     const recurring = await db.readAll('recurring_rules');
     for (const r of recurring) {
         if (r.name.toLowerCase().includes(lowerQuery)) {

@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Main Application (v2.0) — FIXED
+// FINORA — Main Application (v2.0) — COMPLETE
 // ============================================
 
 const App = { currentPage: 'dashboard', initialized: false };
