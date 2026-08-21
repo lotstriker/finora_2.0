@@ -1,5 +1,5 @@
 // ============================================
-// FINORA — Accounts (v2.0) — COMPLETE FIXED
+// FINORA — Accounts (v2.0) — COMPLETE
 // ============================================
 
 const ACCOUNT_TYPES = ['Bank Account', 'Cash', 'Savings Account', 'Credit Card', 'Digital Wallet', 'Other'];
@@ -128,17 +128,35 @@ async function handleAddAccount() {
         return;
     }
 
+    // ✅ Duplicate name check
+    const db = getDB();
+    const existing = await db.readAll('accounts');
+    const duplicate = existing.find(a => a.name.toLowerCase() === name.toLowerCase());
+    if (duplicate) {
+        if (!confirm(`An account with name "${name}" already exists. Do you want to continue?`)) {
+            return;
+        }
+    }
+
     try {
-        const db = getDB();
         const account = {
             id: generateAccountId(),
             name: name,
             type: type,
             balance: 0,
             status: 'active',
+            limit: 0, // For credit card
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
+
+        // ✅ Credit Card limit
+        if (type === 'Credit Card') {
+            const limit = prompt('Enter credit card limit:');
+            if (limit && parseFloat(limit) > 0) {
+                account.limit = parseFloat(limit);
+            }
+        }
 
         await db.create('accounts', account);
 
@@ -205,24 +223,14 @@ async function archiveAccount(accountId) {
     }
 }
 
-// ============================================
 // ✅ ADD MONEY — toggleAddMoneyFields DEFINED FIRST
-// ============================================
-
-// ✅ DEFINE toggleAddMoneyFields GLOBALLY FIRST
 window.toggleAddMoneyFields = function() {
-    console.log('toggleAddMoneyFields called');
     const sourceEl = document.getElementById('addMoneySource');
-    if (!sourceEl) {
-        console.log('addMoneySource not found');
-        return;
-    }
+    if (!sourceEl) return;
     const source = sourceEl.value;
     
-    // Hide all source fields
     document.querySelectorAll('.source-fields').forEach(el => el.style.display = 'none');
     
-    // Show the selected source field
     const fieldMap = {
         'income': 'incomeFields',
         'transfer': 'transferFields',
@@ -232,10 +240,7 @@ window.toggleAddMoneyFields = function() {
     };
     
     const target = document.getElementById(fieldMap[source]);
-    if (target) {
-        target.style.display = 'block';
-        console.log('Showing:', fieldMap[source]);
-    }
+    if (target) target.style.display = 'block';
 };
 
 // ✅ OPEN ADD MONEY MODAL
@@ -334,24 +339,17 @@ async function openAddMoneyModal(accountId) {
         </form>
     `);
 
-    // ✅ Call toggleAddMoneyFields after modal is rendered
-    setTimeout(() => {
-        window.toggleAddMoneyFields();
-    }, 100);
+    setTimeout(() => window.toggleAddMoneyFields(), 50);
 
-    // Handle new person
-    const personSelect = document.getElementById('addMoneyPerson');
-    if (personSelect) {
-        personSelect.addEventListener('change', function() {
-            if (this.value === 'new') {
-                const name = prompt('Enter person name:');
-                if (name && name.trim()) {
-                    showToast('Person added. Please select them from the list.', 'info');
-                }
-                this.value = '';
+    document.getElementById('addMoneyPerson')?.addEventListener('change', function() {
+        if (this.value === 'new') {
+            const name = prompt('Enter person name:');
+            if (name && name.trim()) {
+                showToast('Person added. Please select them from the list.', 'info');
             }
-        });
-    }
+            this.value = '';
+        }
+    });
 
     document.getElementById('addMoneyForm').addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -481,7 +479,7 @@ async function handleAddMoney(accountId) {
     }
 }
 
-// ✅ VIEW ACCOUNT DETAILS
+// ✅ VIEW ACCOUNT DETAILS — with tabs
 async function viewAccountDetails(accountId) {
     const db = getDB();
     const account = await db.read('accounts', accountId);
@@ -496,11 +494,33 @@ async function viewAccountDetails(accountId) {
     const totalIn = transactions.filter(t => t.displayDirection === 'in').reduce((s, t) => s + t.amount, 0);
     const totalOut = transactions.filter(t => t.displayDirection === 'out').reduce((s, t) => s + t.amount, 0);
 
+    // Calculate available credit for credit card
+    let availableCredit = null;
+    if (account.type === 'Credit Card' && account.limit > 0) {
+        const used = await getAccountBalance(accountId);
+        availableCredit = account.limit - used;
+    }
+
+    let creditHtml = '';
+    if (account.type === 'Credit Card' && account.limit > 0) {
+        creditHtml = `
+            <div class="account-detail-row">
+                <span>Credit Limit</span>
+                <span>${formatCurrency(account.limit)}</span>
+            </div>
+            <div class="account-detail-row">
+                <span>Available Credit</span>
+                <span class="${availableCredit >= 0 ? 'text-success' : 'text-danger'}">${formatCurrency(availableCredit)}</span>
+            </div>
+        `;
+    }
+
     openModal(`Account: ${account.name}`, `
         <div class="account-detail">
             <div class="account-detail-balance">
                 <span>Balance</span>
                 <h2>${formatCurrency(account.balance || 0)}</h2>
+                ${account.type === 'Credit Card' ? `<span class="text-muted">Credit Card</span>` : ''}
             </div>
             
             <div class="account-quick-actions">
@@ -518,43 +538,90 @@ async function viewAccountDetails(accountId) {
                 </button>
             </div>
 
-            <div class="account-detail-summary">
-                <div><span>Type</span> ${account.type}</div>
-                <div><span>Status</span> ${account.status || 'active'}</div>
-                <div><span>Created</span> ${formatDate(account.createdAt)}</div>
-                <div><span>Transactions</span> ${transactions.length}</div>
+            <div class="account-detail-tabs">
+                <button class="tab-btn active" data-tab="overview" onclick="switchAccountTab('overview', '${accountId}')">Overview</button>
+                <button class="tab-btn" data-tab="transactions" onclick="switchAccountTab('transactions', '${accountId}')">Transactions</button>
+                <button class="tab-btn" data-tab="reports" onclick="switchAccountTab('reports', '${accountId}')">Reports</button>
             </div>
-            <div class="account-detail-stats">
-                <div><span>Money In</span> <strong class="text-success">${formatCurrency(totalIn)}</strong></div>
-                <div><span>Money Out</span> <strong class="text-danger">${formatCurrency(totalOut)}</strong></div>
-            </div>
-            <hr />
-            <h4>Recent Transactions</h4>
-            <div class="account-txns">
-                ${transactions.slice(0, 10).map(t => {
-                    const isIn = t.displayDirection === 'in';
-                    return `
-                        <div class="txn-item-small" onclick="viewTransaction('${t.id}')">
-                            <span>${t.displayDescription || t.description || t.type}</span>
-                            <span class="${isIn ? 'text-success' : 'text-danger'}">
-                                ${isIn ? '+' : '-'} ${formatCurrency(t.amount)}
-                            </span>
-                            ${t.type === 'transfer' ? `<span class="txn-tag">Transfer</span>` : ''}
+
+            <div id="accountTabContent">
+                <!-- Overview Tab -->
+                <div class="tab-content active" id="tab-overview">
+                    <div class="account-detail-summary">
+                        <div class="account-detail-row"><span>Type</span> <span>${account.type}</span></div>
+                        <div class="account-detail-row"><span>Status</span> <span>${account.status || 'active'}</span></div>
+                        <div class="account-detail-row"><span>Created</span> <span>${formatDate(account.createdAt)}</span></div>
+                        <div class="account-detail-row"><span>Transactions</span> <span>${transactions.length}</span></div>
+                        ${creditHtml}
+                    </div>
+                    <div class="account-detail-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Money In</span>
+                            <strong class="text-success">${formatCurrency(totalIn)}</strong>
                         </div>
-                    `;
-                }).join('')}
-                ${transactions.length === 0 ? '<span class="text-muted">No transactions</span>' : ''}
+                        <div class="stat-item">
+                            <span class="stat-label">Money Out</span>
+                            <strong class="text-danger">${formatCurrency(totalOut)}</strong>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Transactions Tab -->
+                <div class="tab-content" id="tab-transactions" style="display:none;">
+                    <div class="account-txns">
+                        ${transactions.length > 0 ? transactions.map(t => {
+                            const isIn = t.displayDirection === 'in';
+                            return `
+                                <div class="txn-item-small" onclick="viewTransaction('${t.id}')">
+                                    <span>${t.displayDescription || t.description || t.type}</span>
+                                    <span class="${isIn ? 'text-success' : 'text-danger'}">
+                                        ${isIn ? '+' : '-'} ${formatCurrency(t.amount)}
+                                    </span>
+                                    ${t.type === 'transfer' ? `<span class="txn-tag">Transfer</span>` : ''}
+                                </div>
+                            `;
+                        }).join('') : '<span class="text-muted">No transactions</span>'}
+                    </div>
+                </div>
+
+                <!-- Reports Tab -->
+                <div class="tab-content" id="tab-reports" style="display:none;">
+                    <div class="account-reports">
+                        <div class="report-row">
+                            <span>Total Income</span>
+                            <span class="text-success">${formatCurrency(totalIn)}</span>
+                        </div>
+                        <div class="report-row">
+                            <span>Total Expenses</span>
+                            <span class="text-danger">${formatCurrency(totalOut)}</span>
+                        </div>
+                        <div class="report-row">
+                            <span>Net Cash Flow</span>
+                            <span class="${totalIn - totalOut >= 0 ? 'text-success' : 'text-danger'}">${formatCurrency(totalIn - totalOut)}</span>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     `);
 }
 
-// ✅ EXPOSE ALL FUNCTIONS GLOBALLY
+// ✅ Tab switching
+window.switchAccountTab = function(tab, accountId) {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.toggle('active', btn.dataset.tab === tab);
+    });
+    document.querySelectorAll('.tab-content').forEach(el => {
+        el.style.display = 'none';
+    });
+    const target = document.getElementById(`tab-${tab}`);
+    if (target) target.style.display = 'block';
+};
+
+// ✅ EXPOSE ALL FUNCTIONS
 window.loadAccounts = loadAccounts;
 window.openAddAccountModal = openAddAccountModal;
 window.archiveAccount = archiveAccount;
 window.openAddMoneyModal = openAddMoneyModal;
 window.handleAddMoney = handleAddMoney;
 window.viewAccountDetails = viewAccountDetails;
-
-console.log('✅ accounts.js loaded — toggleAddMoneyFields is defined:', typeof window.toggleAddMoneyFields);
